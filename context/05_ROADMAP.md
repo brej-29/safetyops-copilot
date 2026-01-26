@@ -1,5 +1,56 @@
 # Roadmap — SafetyOps Copilot
 
+This roadmap tracks major milestones for SafetyOps Copilot.
+
+---
+
+## Phase 1 — Foundational Pipeline (complete)
+
+**Goal:** Stand up a realistic but lightweight real-time safety monitoring pipeline with clear extension points.
+
+- [x] Define project structure and shared package (`safetyops`).
+- [x] Implement FastAPI API for event ingestion, health, metrics, and basic querying.
+- [x] Implement Redis Streams event bus and worker service for enrichment.
+- [x] Integrate YOLO-based vision PPE stub and rule-based NLP classifier.
+- [x] Persist raw/enriched events and daily aggregates in Postgres.
+- [x] Add Streamlit UI with Live Feed, Incident Triage, and Ops Dashboard.
+- [x] Add Prometheus metrics and basic Grafana placeholders.
+- [x] Provide Docker Compose for local infra (Postgres, Redis, MLflow, Prometheus, Grafana).
+- [x] Add tests for event models, streaming, and enrichment.
+- [x] Document architecture, decisions, and local run commands.
+
+---
+
+## Phase 2 — ML & AI Copilot Enhancements (this prompt)
+
+**Goal:** Turn the pipeline into a more capable Copilot with real models, richer monitoring, and multi-agent workflows.
+
+- [x] NLP fine-tuning pipeline (DistilBERT) with MLflow tracking and local model registry.
+- [x] Real YOLOv8 PPE inference wrapper and optional GPU training script + Colab guide.
+- [x] Multi-step triage workflow with DB context, risk scoring, runbook retrieval, and optional LLM enhancement.
+- [x] Expanded Prometheus metrics and Evidently-based drift reports.
+- [x] Stronger Streamlit UI:
+  - [x] Live stream view with auto-refresh.
+  - [x] Copilot Chat tab for triage interaction.
+  - [x] Monitoring tab for drift and metrics summary.
+- [x] MLOps polish:
+  - [x] DVC `dvc.yaml` with stages for data download and training.
+  - [x] Clear MLflow integration in the NLP training pipeline.
+- [x] Deployment guides for free tiers (Streamlit Cloud, HF Spaces) and `DEPLOY_MODE` switch.
+
+---
+
+## Phase 3 — Future Enhancements (future prompts)
+
+Potential next steps (not yet implemented):
+
+- [ ] Replace synthetic NLP data with curated, de-identified real datasets.
+- [ ] Introduce more sophisticated triage graphs (full LangGraph agents, tools, and memory).
+- [ ] Add per-site, per-line, or per-task analytics in the dashboard.
+- [ ] Deeper integration with external ticketing/incident systems.
+- [ ] Automated regression suites for ML models (data slices, fairness, calibration).
+- [ ] Production-ready deployment templates for specific platforms (Kubernetes, serverless, etc.).oadmap — SafetyOps Copilot
+
 This roadmap is split into:
 
 - **Prompt 1 (current)** — foundational system.

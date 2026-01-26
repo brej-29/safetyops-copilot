@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import httpx
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 API_BASE_URL = os.getenv("SAFETYOPS_API_BASE_URL", "http://localhost:8000")
+DEPLOY_MODE = os.getenv("DEPLOY_MODE", os.getenv("SAFETYOPS_DEPLOY_MODE", "local"))
 
 st.set_page_config(page_title="SafetyOps Copilot", layout="wide")
 
@@ -92,6 +94,9 @@ def _render_live_feed_tab() -> None:
 
     with col2:
         st.markdown("### Recent Enriched Events")
+        st.caption("Auto-refreshing every 5 seconds")
+        st.experimental_autorefresh(interval=5000, key="live_feed_refresh")
+
         events = _fetch_recent_events(limit=100)
         if events:
             df = pd.DataFrame(events)
@@ -145,6 +150,148 @@ def _render_incident_triage_tab() -> None:
         st.info("No triaged incidents yet. Submit one above to see it here.")
 
 
+def _fetch_metrics_summary() -> Dict[str, Any]:
+    client = get_http_client()
+    try:
+        resp = client.get("/metrics")
+        resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        st.error(f"Failed to fetch metrics: {exc}")
+        return {}
+
+    lines = resp.text.splitlines()
+    summary: Dict[str, Any] = {
+        "events_ingested_total": 0,
+        "events_processed_success": 0,
+        "events_processed_dlq": 0,
+        "dlq_messages_total": 0,
+    }
+    for line in lines:
+        if line.startswith("#") or not line.strip():
+            continue
+        if "events_ingested_total" in line:
+            try:
+                summary["events_ingested_total"] += float(line.rsplit(" ", 1)[-1])
+            except ValueError:
+                continue
+        if 'events_processed_total' in line and 'status="success"' in line:
+            try:
+                summary["events_processed_success"] += float(line.rsplit(" ", 1)[-1])
+            except ValueError:
+                continue
+        if 'events_processed_total' in line and 'status="dlq"' in line:
+            try:
+                summary["events_processed_dlq"] += float(line.rsplit(" ", 1)[-1])
+            except ValueError:
+                continue
+        if "dlq_messages_total" in line and "{" not in line:
+            try:
+                summary["dlq_messages_total"] += float(line.rsplit(" ", 1)[-1])
+            except ValueError:
+                continue
+    return summary
+
+
+def _render_copilot_chat_tab() -> None:
+    st.subheader("Copilot Chat")
+
+    if DEPLOY_MODE != "local":
+        st.info(
+            "Copilot Chat is available in local/full deployments. "
+            "In cloud-only mode, consider pointing this UI at a deployed API."
+        )
+
+    with st.form("copilot_chat_form"):
+        text = st.text_area(
+            "Describe the incident",
+            placeholder="Enter an incident description...",
+            height=150,
+        )
+        submitted = st.form_submit_button("Ask Copilot")
+
+    if not submitted:
+        return
+
+    if not text.strip():
+        st.warning("Please enter an incident description.")
+        return
+
+    client = get_http_client()
+    try:
+        resp = client.post("/copilot/triage", json={"text": text})
+        resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        st.error(f"Failed to call Copilot triage: {exc}")
+        return
+
+    payload = resp.json()
+    st.markdown("### Structured Triage")
+    st.json(payload, expanded=False)
+
+    report_md = payload.get("report_markdown") or ""
+    st.markdown("### Copilot Report")
+    st.markdown(report_md)
+
+
+def _render_monitoring_tab() -> None:
+    st.subheader("Monitoring")
+
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        st.markdown("### Drift Analysis")
+        if st.button("Run drift report"):
+            client = get_http_client()
+            try:
+                resp = client.post("/monitoring/drift/run")
+                resp.raise_for_status()
+                st.success("Drift report generated")
+            except httpx.HTTPError as exc:
+                st.error(f"Failed to run drift analysis: {exc}")
+
+        client = get_http_client()
+        try:
+            latest = client.get("/monitoring/drift/latest")
+            latest.raise_for_status()
+            latest_path = latest.json().get("report_path")
+        except httpx.HTTPError as exc:
+            latest_path = None
+            st.error(f"Failed to fetch latest drift report: {exc}")
+
+        if latest_path:
+            st.caption(f"Latest drift report: {latest_path}")
+        else:
+            st.info("No drift report available yet.")
+
+        st.markdown("### Metrics Summary")
+        metrics_summary = _fetch_metrics_summary()
+        if metrics_summary:
+            st.metric("Events ingested", metrics_summary.get("events_ingested_total", 0))
+            st.metric("Events processed (success)", metrics_summary.get("events_processed_success", 0))
+            st.metric("Events processed to DLQ", metrics_summary.get("events_processed_dlq", 0))
+            st.metric("DLQ messages total", metrics_summary.get("dlq_messages_total", 0))
+
+    with col2:
+        st.markdown("### Drift Report Preview")
+        client = get_http_client()
+        try:
+            latest = client.get("/monitoring/drift/latest")
+            latest.raise_for_status()
+            latest_path = latest.json().get("report_path")
+        except httpx.HTTPError:
+            latest_path = None
+
+        if latest_path and os.path.exists(latest_path):
+            with open(latest_path, "r", encoding="utf-8") as f:
+                html = f.read()
+            components.html(html, height=600, scrolling=True)
+        else:
+            st.info(
+                "Generate a drift report to see an HTML preview here. "
+                "In some deployments, direct file access may not be available."
+            )
+
+
 def _render_ops_dashboard_tab() -> None:
     st.subheader("Ops Dashboard")
 
@@ -164,18 +311,14 @@ def _render_ops_dashboard_tab() -> None:
     st.markdown("### Raw aggregate data")
     st.dataframe(df, use_container_width=True)
 
-    st.markdown("### Monitoring and Drift (Placeholders)")
-    st.write(
-        "In later prompts, this section will link to more detailed monitoring views "
-        " (e.g., Grafana dashboards, drift reports, and model performance summaries)."
-    )
-
 
 def main() -> None:
     st.title("SafetyOps Copilot")
     st.caption("PPE and incident triage assistant (v1)")
 
-    tab_live, tab_triage, tab_ops = st.tabs(["Live Feed", "Incident Triage", "Ops Dashboard"])
+    tab_live, tab_triage, tab_copilot, tab_ops, tab_monitor = st.tabs(
+        ["Live Feed", "Incident Triage", "Copilot Chat", "Ops Dashboard", "Monitoring"]
+    )
 
     with tab_live:
         _render_live_feed_tab()
@@ -183,8 +326,14 @@ def main() -> None:
     with tab_triage:
         _render_incident_triage_tab()
 
+    with tab_copilot:
+        _render_copilot_chat_tab()
+
     with tab_ops:
         _render_ops_dashboard_tab()
+
+    with tab_monitor:
+        _render_monitoring_tab()
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from safetyops.ml.nlp.classifier import classify_incident
+from safetyops.ml.nlp.infer import predict_severity
 from safetyops.ml.vision import yolo
 
 
@@ -14,9 +15,19 @@ def test_classify_incident_rule_based() -> None:
     assert pred_fire.category == "fire"
 
 
+def test_predict_severity_falls_back_to_rule_based(monkeypatch) -> None:
+    # Force model loading to fail so that we use the rule-based classifier.
+    monkeypatch.setattr("safetyops.ml.nlp.infer._load_model", lambda: (None, None))
+    pred = predict_severity("Chemical spill in lab with minor injury.")
+    assert pred.category == "chemical"
+    assert pred.severity in {"low", "medium", "high"}
+    assert 0.0 <= pred.confidence <= 1.0
+
+
 def test_run_ppe_inference_stub(monkeypatch) -> None:
     # Avoid loading YOLO weights in tests by forcing the stub path.
-    monkeypatch.setattr(yolo, "_load_model", lambda: None)
+    monkeypatch.setattr(yolo, "_run_ppe_inference", lambda image_path=None: None, raising=False)
+    monkeypatch.setattr("safetyops.ml.vision.infer._load_model", lambda: None, raising=False)
     result = yolo.run_ppe_inference(image_path=None)
 
     assert 0.0 <= result.compliance_score <= 1.0

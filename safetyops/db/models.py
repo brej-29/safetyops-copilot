@@ -17,6 +17,7 @@ class RawEvent(Base):
     payload: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     correlation_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    stream_message_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, unique=True)
 
     enriched_event: Mapped["EnrichedEvent"] = relationship(
         "EnrichedEvent",
@@ -47,4 +48,17 @@ class DailyAggregate(Base):
     date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String, nullable=False, index=True)
     severity: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    category: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class HourlyAggregate(Base):
+    __tablename__ = "hourly_aggregates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    hour: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    severity: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    category: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
     count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

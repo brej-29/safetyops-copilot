@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -29,3 +29,27 @@ class AggregateSummaryItem(BaseModel):
 
 class AggregateSummaryResponse(BaseModel):
     items: List[AggregateSummaryItem]
+
+
+class CopilotTriageRequest(BaseModel):
+    incident_id: Optional[str] = None
+    text: Optional[str] = None
+    image_path: Optional[str] = None
+
+
+class CopilotTriageContextEvent(BaseModel):
+    id: str
+    created_at: datetime
+    category: Optional[str]
+    severity: Optional[str]
+    risk_score: Optional[int]
+
+
+class CopilotTriageResponse(BaseModel):
+    incident_id: str
+    category: Optional[str]
+    severity: Optional[str]
+    risk_score: Optional[int]
+    context_events: List[CopilotTriageContextEvent]
+    aggregates: Dict[str, Any]
+    report_markdown: str

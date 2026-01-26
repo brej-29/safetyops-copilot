@@ -1,3 +1,15 @@
-from safetyops.monitoring.metrics import EVENTS_PUBLISHED, WORKER_PROCESSED, WORKER_PROCESSING_TIME
+from safetyops.monitoring.metrics import (
+    DLQ_MESSAGES,
+    EVENTS_INGESTED,
+    EVENTS_PROCESSED,
+    WORKER_PROCESSING_TIME,
+    model_inference_seconds,
+)
 
-__all__ = ["EVENTS_PUBLISHED", "WORKER_PROCESSED", "WORKER_PROCESSING_TIME"]
+__all__ = [
+    "DLQ_MESSAGES",
+    "EVENTS_INGESTED",
+    "EVENTS_PROCESSED",
+    "WORKER_PROCESSING_TIME",
+    "model_inference_seconds",
+]

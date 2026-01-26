@@ -12,29 +12,37 @@ This document describes the high-level architecture of SafetyOps Copilot, focusi
   - Ingests `text_event` and `vision_event`.
   - Provides read APIs for recent enriched events and aggregates.
   - Exposes `/health` and `/metrics` for monitoring and CI checks.
+  - Exposes `/copilot/triage` for the multi-step triage workflow.
+  - Exposes `/monitoring/drift/*` and DLQ management endpoints.
 - **Worker service (`services/worker`)**
-  - Consumes events from Redis Streams.
+  - Consumes events from Redis Streams using consumer groups.
   - Runs:
-    - YOLO-based PPE detection (vision).
-    - Rule-based text classification (text).
+    - YOLOv8-based PPE detection (vision).
+    - NLP severity model (DistilBERT) + rule-based category classification (text).
   - Persists raw and enriched events into Postgres.
-  - Maintains daily aggregates.
+  - Computes a per-event `risk_score` and maintains daily and hourly aggregates.
+  - Implements idempotent processing and a DLQ stream with retries and backoff.
 - **UI service (`apps/ui`)**
   - Streamlit-based dashboard.
   - Generates demo events.
   - Surfaces live enriched events and aggregates.
-  - Provides a simple triage flow.
+  - Provides:
+    - **Incident Triage** form.
+    - **Copilot Chat** tab that calls `/copilot/triage`.
+    - **Monitoring** tab for drift reports and metrics summary.
 
 ### Shared Python package (`safetyops`)
 
 - `core/` – settings, logging, shared exceptions.
 - `domain/` – Pydantic models for events, predictions, and API schemas.
 - `ml/` – ML wrappers:
-  - `vision/` – YOLO PPE wrapper with lazy imports.
-  - `nlp/` – text classification stub.
+  - `vision/` – YOLO PPE wrapper with lazy imports + optional training.
+  - `nlp/` – rule-based classifier plus DistilBERT fine-tune & inference.
 - `streaming/` – Redis Streams abstraction (`BaseEventBus` + Redis implementation).
 - `db/` – SQLAlchemy models, engine/session helpers, and migration scaffold.
-- `monitoring/` – Prometheus metrics helpers.
+- `monitoring/` – Prometheus metrics helpers and Evidently drift integration.
+- `agents/` – triage workflow orchestration and multi-step reasoning.
+- `runbooks/` – markdown incident response playbooks used by the triage agent.
 
 ### Infra (`infra/`)
 

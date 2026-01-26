@@ -29,7 +29,8 @@ flowchart LR
     subgraph Processing
         W[Worker Service<br/>services/worker]
         MLVision[YOLO PPE Wrapper<br/>safetyops/ml/vision]
-        MLText[Text Classifier Stub<br/>safetyops/ml/nlp]
+        MLText[NLP Severity Model<br/>safetyops/ml/nlp]
+        Agent[Copilot Triage Workflow<br/>safetyops/agents]
     end
 
     subgraph Storage
@@ -50,12 +51,13 @@ flowchart LR
 
     API -- read --> PG
     UI -- HTTP --> API
+    API -- /copilot/triage --> Agent
 
     API -- /metrics --> Prom
     W -- worker metrics --> Prom
     Prom -- dashboards --> Graf
 
-    W -- tracking (later) --> MLflow
+    W -- training logs --> MLflow
 ```
 
 ---
@@ -80,11 +82,13 @@ Core layout (created for v1):
   - `core/` – logging, settings, exceptions.
   - `domain/` – Pydantic models for events, predictions, API schemas.
   - `ml/`
-    - `vision/` – YOLO PPE inference wrapper.
-    - `nlp/` – text classifier stub.
+    - `vision/` – YOLO PPE inference wrapper and optional training.
+    - `nlp/` – rule-based classifier plus DistilBERT fine-tuning and inference.
   - `streaming/` – Redis Streams event bus abstraction.
   - `db/` – SQLAlchemy models, engine/session, migrations scaffold.
-  - `monitoring/` – Prometheus metrics helpers.
+  - `monitoring/` – Prometheus metrics helpers and Evidently drift reporting.
+  - `agents/` – multi-step triage workflow (Copilot).
+  - `runbooks/` – markdown incident playbooks used by the triage agent.
 - `data/`
   - `sample/` – tiny synthetic sample inputs (text, vision placeholders).
 - `notebooks/`
@@ -188,9 +192,6 @@ You should now have:
 Key endpoints (FastAPI):
 
 - `GET /health`
-  - Returns `{ "status": "ok", "version": <app_version> }`.ealth`
-  - Returns `{ "status": "ok", "version": <app_version> }`.ealth`
-  - Returns `{ \"status\": \"ok\", \"version\": <app_version> }`.ealth`
   - Returns `{ "status": "ok", "version": <app_version> }`.
 - `GET /metrics`
   - Prometheus-compatible metrics.
@@ -206,8 +207,19 @@ Key endpoints (FastAPI):
   - Returns recent enriched events from Postgres.
 - `GET /aggregates/summary`
   - Returns simple aggregates (counts by type/severity over a recent window).
+- `POST /monitoring/drift/run`
+  - Runs Evidently-based drift analysis comparing training vs. recent events.
+- `GET /monitoring/drift/latest`
+  - Returns the path of the latest drift report HTML file.
+- `GET /dlq/recent`
+  - Returns recent messages that failed processing and were sent to the DLQ stream.
+- `POST /reprocess/{message_id}`
+  - Re-publishes a DLQ message for reprocessing by the worker.
+- `POST /copilot/triage`
+  - Runs the Copilot triage workflow for a given incident ID or free-text description.
+  - Returns structured JSON plus a markdown incident brief.
 
-All ingestion endpoints use Pydantic models under `safetyops.domain`.
+All ingestion and response schemas are defined under `safetyops.domain`.
 
 ---
 
@@ -250,14 +262,22 @@ Tabs:
 
 1. **Live Feed**
    - Button to produce N demo events (both text and vision).
-   - Periodically refreshes recent enriched events from `/events/recent`.
+   - Auto-refreshes recent enriched events from `/events/recent`.
 2. **Incident Triage**
    - Text area for incident description.
    - Submits to `/events/text`.
    - Displays the latest triaged incidents.
-3. **Ops Dashboard**
-   - Uses `/aggregates/summary` to render simple charts.
-   - Includes placeholder links for future monitoring (model drift, worker health).
+3. **Copilot Chat**
+   - Text area to describe an incident.
+   - Calls `/copilot/triage` and shows:
+     - Structured JSON (category, severity, risk score, context events).
+     - A markdown incident brief with immediate and preventive actions.
+4. **Ops Dashboard**
+   - Uses `/aggregates/summary` to render simple charts by event type and severity.
+5. **Monitoring**
+   - Button to trigger drift analysis via `/monitoring/drift/run`.
+   - Shows latest drift report path and (where possible) an inline HTML preview.
+   - Summarizes key Prometheus metrics: events ingested, processed, DLQ counts.
 
 ---
 
@@ -267,19 +287,26 @@ All configuration is centralized via `safetyops.core.settings.Settings` using `p
 
 Key variables (prefix `SAFETYOPS_`):
 
-| Variable                       | Default (local)                                                   | Description                                  |
-|--------------------------------|-------------------------------------------------------------------|----------------------------------------------|
-| `SAFETYOPS_APP_NAME`          | `SafetyOps Copilot`                                               | Display name                                 |
-| `SAFETYOPS_APP_VERSION`       | `0.1.0`                                                           | API version                                  |
-| `SAFETYOPS_ENV`               | `local`                                                           | Environment name                             |
-| `SAFETYOPS_LOG_LEVEL`         | `INFO`                                                            | Logging level                                |
-| `SAFETYOPS_REDIS_URL`         | `redis://localhost:6379`                                          | Redis connection URL                         |
-| `SAFETYOPS_STREAM_KEY`        | `safetyops:events`                                                | Redis Stream key                             |
-| `SAFETYOPS_CONSUMER_GROUP`    | `safetyops-workers`                                               | Redis consumer group name                    |
-| `SAFETYOPS_CONSUMER_NAME`     | `worker-1`                                                        | Consumer name                                |
-| `SAFETYOPS_DATABASE_URL`      | `postgresql+psycopg2://safetyops:safetyops@localhost:5432/safetyops` | Postgres URL for SQLAlchemy                  |
-| `SAFETYOPS_MLFLOW_TRACKING_URI` | `http://localhost:5000`                                         | MLflow tracking URI (optional for v1)        |
-| `SAFETYOPS_METRICS_NAMESPACE` | `safetyops`                                                       | Prefix/namespace for Prometheus metrics      |
+| Variable                         | Default (local)                                                   | Description                                      |
+|----------------------------------|-------------------------------------------------------------------|--------------------------------------------------|
+| `SAFETYOPS_APP_NAME`            | `SafetyOps Copilot`                                               | Display name                                     |
+| `SAFETYOPS_APP_VERSION`         | `0.1.0`                                                           | API version                                      |
+| `SAFETYOPS_ENV`                 | `local`                                                           | Environment name                                 |
+| `SAFETYOPS_LOG_LEVEL`           | `INFO`                                                            | Logging level                                    |
+| `SAFETYOPS_DEPLOY_MODE`         | `local`                                                           | `local` or `cloud` deploy mode                   |
+| `SAFETYOPS_REDIS_URL`           | `redis://localhost:6379`                                          | Redis connection URL                             |
+| `SAFETYOPS_STREAM_KEY`          | `safetyops:events`                                                | Redis Stream key                                 |
+| `SAFETYOPS_CONSUMER_GROUP`      | `safetyops-workers`                                               | Redis consumer group name                        |
+| `SAFETYOPS_CONSUMER_NAME`       | `worker-1`                                                        | Consumer name                                    |
+| `SAFETYOPS_DLQ_STREAM_KEY`      | `safetyops:events:dlq`                                            | Redis Stream key for DLQ messages                |
+| `SAFETYOPS_DATABASE_URL`        | `postgresql+psycopg2://safetyops:safetyops@localhost:5432/safetyops` | Postgres URL for SQLAlchemy                      |
+| `SAFETYOPS_MLFLOW_TRACKING_URI` | `http://localhost:5000`                                           | MLflow tracking URI                              |
+| `SAFETYOPS_ARTIFACTS_DIR`       | `artifacts`                                                       | Base directory for derived artifacts             |
+| `SAFETYOPS_NLP_MODEL_DIR`       | `models/nlp`                                                      | Directory containing the fine-tuned NLP model    |
+| `SAFETYOPS_VISION_MODEL_PATH`   | `yolov8n.pt`                                                      | YOLOv8 weights path (pretrained or fine-tuned)   |
+| `SAFETYOPS_OLLAMA_BASE_URL`     | *(unset)*                                                         | Base URL for local Ollama (optional)             |
+| `SAFETYOPS_OLLAMA_MODEL`        | *(unset)*                                                         | Ollama model name (e.g. `llama3`)                |
+| `SAFETYOPS_METRICS_NAMESPACE`   | `safetyops`                                                       | Prefix/namespace for Prometheus metrics          |
 
 Update `.env.example` and `.env` if new configuration is introduced.
 

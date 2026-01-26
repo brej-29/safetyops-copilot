@@ -136,9 +136,127 @@ Future changes that materially alter behavior or architecture should **append** 
 
 ---
 
+## ADR-0008: Synthetic NLP Dataset + DistilBERT Severity Model
+
+- **Status**: Accepted
+- **Context**:
+  - We need an NLP model that can be trained and run on free-tier hardware.
+  - No suitable open incident/safety dataset is guaranteed, and licensing can be complex.
+- **Decision**:
+  - Generate a small **synthetic incident dataset** with category and severity labels via
+    `scripts/download_text_dataset.py`.
+  - Fine-tune `distilbert-base-uncased` on **severity** only (`low`, `medium`, `high`).
+  - Keep category classification rule-based in v1.
+  - Log metrics and artifacts to MLflow and save the model under `models/nlp/`.
+- **Consequences**:
+  - Training is lightweight and reproducible on laptops and free GPUs.
+  - The model is clearly marked as synthetic / non-production in the model card.
+  - Real deployments can swap in a production-grade dataset and retrain.
+
+---
+
+## ADR-0009: YOLOv8 PPE Inference with Optional Colab Training
+
+- **Status**: Accepted
+- **Context**:
+  - We want realistic PPE detection without bundling large image datasets.
+- **Decision**:
+  - Use Ultralytics **YOLOv8n** (`yolov8n.pt`) as the default PPE model.
+  - Implement `safetyops.ml.vision.infer.run_ppe_inference` with lazy imports and a stub fallback.
+  - Provide an optional `safetyops.ml.vision.train` script and `docs/vision_colab.md` to fine-tune
+    on a YOLO-format PPE dataset in Google Colab.
+- **Consequences**:
+  - Inference works out-of-the-box on CPU with automatic weight download.
+  - Users with a GPU can train custom PPE models without bloating the repo.
+  - The worker and UI remain robust even when YOLO is unavailable (stub path).
+
+---
+
+## ADR-0010: LangGraph-Inspired Triage Workflow with Local LLM Fallback
+
+- **Status**: Accepted
+- **Context**:
+  - SafetyOps Copilot needs a multi-step reasoning pipeline for incident triage, not just
+    single-shot model calls.
+  - We want an architecture that can later be upgraded to full LangGraph / multi-agent flows.
+- **Decision**:
+  - Implement a triage workflow in `safetyops.agents.triage_graph` composed of:
+    - Context fetch (recent events, aggregates).
+    - Risk assessment.
+    - Runbook lookup from local markdown playbooks.
+    - Report writer that produces a structured markdown brief.
+    - Optional LLM enhancer that calls a local **Ollama** instance if configured via env vars.
+  - Expose this via `POST /copilot/triage`.
+- **Consequences**:
+  - Triage remains deterministic and fully functional without any LLM.
+  - If an LLM is available, it can refine the human-facing report without changing core logic.
+  - The design is compatible with future LangGraph upgrades if we add explicit graph definitions.
+
+---
+
+## ADR-0011: Evidently-Based Drift Reports
+
+- **Status**: Accepted
+- **Context**:
+  - We need basic model monitoring and drift detection that works from Postgres + CSV data.
+- **Decision**:
+  - Use **Evidently** to compare:
+    - Reference data from the synthetic training CSV.
+    - Recent production enriched text events from Postgres.
+  - Generate HTML reports under `artifacts/drift_reports/` and expose them via:
+    - `POST /monitoring/drift/run`
+    - `GET /monitoring/drift/latest`
+- **Consequences**:
+  - Drift analysis is scriptable and can be triggered via API/UI.
+  - Reports are static HTML files that are easy to store and share.
+  - Future: add richer monitoring (per-feature, per-site) without changing the interface.
+
+---
+
+## ADR-0012: DLQ and Idempotent Worker with Redis Streams
+
+- **Status**: Accepted
+- **Context**:
+  - The real-time worker must be resilient to failures and restarts.
+- **Decision**:
+  - Store the Redis **stream message ID** on `RawEvent.stream_message_id` to enforce
+    idempotent processing.
+  - Add a Redis **DLQ stream** (`safetyops:events:dlq`) and:
+    - Retry processing with exponential backoff.
+    - After N failures, push the event + error info to the DLQ.
+  - Expose:
+    - `GET /dlq/recent` to inspect DLQ entries.
+    - `POST /reprocess/{message_id}` to replay messages back into the main stream.
+- **Consequences**:
+  - Multiple workers can safely process the same stream without double-enrichment.
+  - Operators have visibility into failed events and a way to reprocess them.
+  - The design stays compatible with the existing Redis Streams abstraction.
+
+---
+
+## ADR-0013: Free-First Deployments (Streamlit Cloud + HF Spaces)
+
+- **Status**: Accepted
+- **Context**:
+  - Target users should be able to run SafetyOps Copilot end-to-end on free tiers.
+- **Decision**:
+  - Introduce `DEPLOY_MODE` (`local` | `cloud`) in settings.
+  - Provide deployment docs:
+    - `docs/deploy/streamlit_cloud.md` for Streamlit Cloud UI.
+    - `docs/deploy/hf_spaces.md` for FastAPI on Hugging Face Spaces.
+  - In `cloud` mode:
+    - Prefer calling a remote API via `SAFETYOPS_API_BASE_URL`.
+    - Avoid assuming local Docker-only services.
+- **Consequences**:
+  - A minimal demo can run with only the UI on Streamlit Cloud.
+  - More complete setups can combine HF Spaces API + managed Redis/Postgres.
+  - Local Docker Compose remains the recommended mode for full-featured development.
+
+---
+
 ## How to add a new decision
 
-1. Increment the ADR ID (e.g., `ADR-0008`).
+1. Increment the ADR ID (e.g., `ADR-0014`).
 2. Use the same template:
    - Status
    - Context

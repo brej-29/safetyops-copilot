@@ -5,12 +5,14 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import List
 
+import redis
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from safetyops.agents.triage_graph import run_triage_workflow
 from safetyops.core import configure_logging, get_logger, set_correlation_id, settings
 from safetyops.core.exceptions import SafetyOpsError
 from safetyops.db import DailyAggregate, EnrichedEvent, init_db
@@ -25,10 +27,13 @@ from safetyops.domain.events import (
 from safetyops.domain.responses import (
     AggregateSummaryItem,
     AggregateSummaryResponse,
+    CopilotTriageRequest,
+    CopilotTriageResponse,
+    CopilotTriageContextEvent,
     EnrichedEventResponse,
     HealthResponse,
 )
-from safetyops.monitoring import EVENTS_PUBLISHED
+from safetyops.monitoring import EVENTS_INGESTED
 from safetyops.streaming import RedisStreamsEventBus
 
 configure_logging()
@@ -120,7 +125,7 @@ def create_text_event(request: Request, body: TextEventRequest) -> dict:
     )
 
     message_id = _event_bus.publish(envelope)
-    EVENTS_PUBLISHED.labels(event_type=envelope.event_type.value).inc()
+    EVENTS_INGESTED.labels(event_type=envelope.event_type.value).inc()
 
     return {"event_id": envelope.id, "message_id": message_id}
 
@@ -159,7 +164,7 @@ async def create_vision_event(
     )
 
     message_id = _event_bus.publish(envelope)
-    EVENTS_PUBLISHED.labels(event_type=envelope.event_type.value).inc()
+    EVENTS_INGESTED.labels(event_type=envelope.event_type.value).inc()
 
     return {"event_id": envelope.id, "message_id": message_id, "image_path": resolved_image_path}
 
@@ -221,3 +226,134 @@ def get_aggregate_summary(
         for row in rows
     ]
     return AggregateSummaryResponse(items=items)
+
+
+@app.post("/monitoring/drift/run")
+def run_drift_report() -> dict:
+    """Trigger Evidently drift analysis and return the path to the report."""
+    from safetyops.monitoring.drift import run_drift_analysis
+
+    try:
+        path = run_drift_analysis()
+    except Exception as exc:
+        logger.exception("Failed to run drift analysis")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return {"report_path": str(path)}
+
+
+@app.get("/monitoring/drift/latest")
+def get_latest_drift_report() -> dict:
+    """Return the latest available drift report path, if any."""
+    from safetyops.monitoring.drift import get_latest_report_path
+
+    path = get_latest_report_path()
+    if path is None:
+        return {"report_path": None}
+    return {"report_path": str(path)}
+
+
+@app.get("/dlq/recent")
+def get_recent_dlq_messages(limit: int = 50) -> dict:
+    """Return recent messages from the DLQ Redis stream."""
+    if limit <= 0:
+        raise HTTPException(status_code=400, detail="limit must be positive")
+
+    client = redis.Redis.from_url(settings.redis_url, decode_responses=False)
+    try:
+        # Use XREVRANGE to get most recent messages first
+        entries = client.xrevrange(settings.dlq_stream_key, max="+", min="-", count=limit)
+    except Exception as exc:
+        logger.exception("Failed to read from DLQ stream")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    messages = []
+    for message_id, fields in entries:
+        raw_data = fields.get(b"data") or fields.get("data")
+        if isinstance(raw_data, (bytes, bytearray)):
+            payload_str = raw_data.decode("utf-8")
+        else:
+            payload_str = str(raw_data)
+        messages.append(
+            {
+                "message_id": message_id.decode() if isinstance(message_id, bytes) else message_id,
+                "data": payload_str,
+            }
+        )
+
+    return {"messages": messages}
+
+
+@app.post("/reprocess/{message_id}")
+def reprocess_from_dlq(message_id: str) -> dict:
+    """Reprocess a message that previously failed and was sent to the DLQ.
+
+    The message is read from the DLQ stream and re-published to the main stream
+    so that a worker can pick it up again.
+    """
+    client = redis.Redis.from_url(settings.redis_url, decode_responses=False)
+    try:
+        entries = client.xrange(settings.dlq_stream_key, min=message_id, max=message_id)
+    except Exception as exc:
+        logger.exception("Failed to read specific message from DLQ", extra={"message_id": message_id})
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    if not entries:
+        raise HTTPException(status_code=404, detail="DLQ message not found")
+
+    _, fields = entries[0]
+    raw_data = fields.get(b"data") or fields.get("data")
+    if isinstance(raw_data, (bytes, bytearray)):
+        payload_str = raw_data.decode("utf-8")
+    else:
+        payload_str = str(raw_data)
+
+    import json
+
+    try:
+        payload = json.loads(payload_str)
+        envelope_json = payload.get("envelope")
+        if isinstance(envelope_json, str):
+            envelope = EventEnvelope.model_validate_json(envelope_json)
+        else:
+            envelope = EventEnvelope.model_validate(envelope_json)
+    except Exception as exc:
+        logger.exception("Failed to parse DLQ payload for reprocessing", extra={"message_id": message_id})
+        raise HTTPException(status_code=500, detail="Invalid DLQ payload; cannot reprocess") from exc
+
+    new_message_id = _event_bus.publish(envelope)
+    return {"reprocessed_event_id": envelope.id, "new_message_id": new_message_id}
+
+
+@app.post("/copilot/triage", response_model=CopilotTriageResponse)
+def copilot_triage(request_body: CopilotTriageRequest) -> CopilotTriageResponse:
+    """Run the Copilot triage workflow for an incident ID or free-text description."""
+    if not request_body.incident_id and not (request_body.text and request_body.text.strip()):
+        raise HTTPException(status_code=400, detail="Provide either incident_id or text")
+
+    state = run_triage_workflow(
+        incident_id=request_body.incident_id,
+        text=request_body.text,
+        image_path=request_body.image_path,
+    )
+
+    context_events = [
+        CopilotTriageContextEvent(
+            id=ev.id,
+            created_at=ev.created_at,
+            category=ev.category,
+            severity=ev.severity,
+            risk_score=ev.risk_score,
+        )
+        for ev in state.get("context_events", [])
+    ]
+
+    return CopilotTriageResponse(
+        incident_id=state.get("incident_id", request_body.incident_id or "ad-hoc"),
+        category=state.get("category"),
+        severity=state.get("severity"),
+        risk_score=state.get("risk_score"),
+        context_events=context_events,
+        aggregates=state.get("aggregates", {}),
+        report_markdown=state.get("report_markdown", ""),
+    )
