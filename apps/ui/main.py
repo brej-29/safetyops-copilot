@@ -19,6 +19,20 @@ def get_http_client() -> httpx.Client:
     return httpx.Client(base_url=API_BASE_URL, timeout=5.0)
 
 
+def _fetch_system_status() -> Dict[str, Any]:
+    client = get_http_client()
+    try:
+        resp = client.get("/system/status")
+        resp.raise_for_status()
+        return resp.json()
+    except httpx.HTTPError as exc:
+        st.error(
+            "System status check failed. Ensure the API is running and reachable. "
+            f"Details: {exc}"
+        )
+        return {}
+
+
 def _fetch_recent_events(limit: int = 50) -> List[Dict[str, Any]]:
     client = get_http_client()
     try:
@@ -28,6 +42,20 @@ def _fetch_recent_events(limit: int = 50) -> List[Dict[str, Any]]:
     except httpx.HTTPError as exc:
         st.error(f"Failed to fetch recent events: {exc}")
         return []
+
+
+def _fetch_system_status() -> Dict[str, Any]:
+    client = get_http_client()
+    try:
+        resp = client.get("/system/status")
+        resp.raise_for_status()
+        return resp.json()
+    except httpx.HTTPError as exc:
+        st.error(
+            "System status check failed. Ensure the API is running and reachable. "
+            f"Details: {exc}"
+        )
+        return {}
 
 
 def _fetch_aggregate_summary(days: int = 7) -> List[Dict[str, Any]]:
@@ -79,9 +107,39 @@ def _produce_demo_events(n_text: int = 5, n_vision: int = 3) -> None:
 def _render_live_feed_tab() -> None:
     st.subheader("Live Feed")
 
-    col1, col2 = st.columns([1, 3])
+    col_status, col_controls, col_table = st.columns([1, 1, 2])
 
-    with col1:
+    with col_status:
+        st.markdown("### System Status")
+        status = _fetch_system_status()
+        if not status:
+            st.info(
+                "System status is unavailable. Make sure the API is running at "
+                f"{API_BASE_URL} and Docker services are up."
+            )
+        else:
+            api_icon = "✅" if status.get("api_ok") else "❌"
+            db_icon = "✅" if status.get("database_ok") else "❌"
+            redis_icon = "✅" if status.get("redis_ok") else "❌"
+
+            st.markdown(f"{api_icon} API")
+            st.markdown(f"{db_icon} Database")
+            st.markdown(f"{redis_icon} Redis")
+
+            hb = status.get("worker_last_heartbeat")
+            hb_age = status.get("worker_seconds_since_heartbeat")
+            if hb:
+                st.caption(
+                    f"Worker heartbeat: {hb} (age: {hb_age:.0f}s)"
+                    if isinstance(hb_age, (int, float))
+                    else f"Worker heartbeat: {hb}"
+                )
+            else:
+                st.caption(
+                    "Worker heartbeat not available. Ensure the worker process is running."
+                )
+
+    with col_controls:
         st.markdown("### Demo Controls")
         n_text = st.slider("Number of demo text events", min_value=1, max_value=20, value=5)
         n_vision = st.slider("Number of demo vision events", min_value=1, max_value=10, value=3)
@@ -92,7 +150,7 @@ def _render_live_feed_tab() -> None:
         if st.button("Refresh feed"):
             st.experimental_rerun()
 
-    with col2:
+    with col_table:
         st.markdown("### Recent Enriched Events")
         st.caption("Auto-refreshing every 5 seconds")
         st.experimental_autorefresh(interval=5000, key="live_feed_refresh")
@@ -122,33 +180,26 @@ def _render_incident_triage_tab() -> None:
         )
         submitted = st.form_submit_button("Submit for triage")
 
-    if submitted:
-        if not text.strip():
-            st.warning("Please provide an incident description.")
-            return
+    if summary_items:
+            df = pd.DataFrame(summary_items)
+            st.markdown("### Counts by event type and severity")
 
-        client = get_http_client()
-        try:
-            response = client.post(
-                "/events/text",
-                json={"text": text, "metadata": {"source": "ui-triage"}},
+            pivot = df.pivot_table(
+                index="event_type",
+                columns="severity",
+                values="count",
+                aggfunc="sum",
+                fill_value=0,
             )
-            response.raise_for_status()
-            st.success("Incident submitted for triage")
-        except httpx.HTTPError as exc:
-            st.error(f"Failed to submit incident: {exc}")
-            return
+            st.bar_chart(pivot)
 
-    st.markdown("### Recent Triaged Incidents")
-    events = _fetch_recent_events(limit=20)
-    text_events = [e for e in events if e.get("event_type") == "text_event"]
-    if text_events:
-        df = pd.DataFrame(text_events)
-        enrichment_cols = df["enrichment"].apply(lambda x: x or {})
-        enrichment_df = pd.json_normalize(enrichment_cols)
-        enrichment_df.columns = [f"enrich.{c}" for c in enrichment_df.columns]
-        df = pd.concat([df.drop(columns=["enrichment"]), enrichment_df], axis=1)
-        st.dataframe(df, use_container_width=True)
+            st.markdown("### Raw aggregate data")
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.info(
+                "No aggregates available yet. Ensure the worker is running and events "
+                "are being ingested."
+            )
     else:
         st.info("No triaged incidents yet. Submit one above to see it here.")
 
@@ -241,43 +292,18 @@ def _render_monitoring_tab() -> None:
 
     col1, col2 = st.columns([1, 2])
 
-    with col1:
-        st.markdown("### Drift Analysis")
-        if st.button("Run drift report"):
-            client = get_http_client()
-            try:
-                resp = client.post("/monitoring/drift/run")
-                resp.raise_for_status()
-                st.success("Drift report generated")
-            except httpx.HTTPError as exc:
-                st.error(f"Failed to run drift analysis: {exc}")
+    with col_controls:
+        st.markdown("### Demo Controls")
+        n_text = st.slider("Number of demo text events", min_value=1, max_value=20, value=5)
+        n_vision = st.slider("Number of demo vision events", min_value=1, max_value=10, value=3)
+        if st.button("Produce demo events"):
+            _produce_demo_events(n_text=n_text, n_vision=n_vision)
+            st.success("Demo events submitted")
 
-        client = get_http_client()
-        try:
-            latest = client.get("/monitoring/drift/latest")
-            latest.raise_for_status()
-            latest_path = latest.json().get("report_path")
-        except httpx.HTTPError as exc:
-            latest_path = None
-            st.error(f"Failed to fetch latest drift report: {exc}")
+        if st.button("Refresh feed"):
+            st.experimental_rerun()
 
-        if latest_path:
-            st.caption(f"Latest drift report: {latest_path}")
-        else:
-            st.info("No drift report available yet.")
-
-        st.markdown("### Metrics Summary")
-        metrics_summary = _fetch_metrics_summary()
-        if metrics_summary:
-            st.metric("Events ingested", metrics_summary.get("events_ingested_total", 0))
-            st.metric(
-                "Events processed (success)",
-                metrics_summary.get("events_processed_success", 0),
-            )
-            st.metric("Events processed to DLQ", metrics_summary.get("events_processed_dlq", 0))
-            st.metric("DLQ messages total", metrics_summary.get("dlq_messages_total", 0))
-
-    with col2:
+    with col_table:
         st.markdown("### Drift Report Preview")
         client = get_http_client()
         try:
@@ -305,7 +331,10 @@ def _render_ops_dashboard_tab() -> None:
     summary_items = _fetch_aggregate_summary(days=days)
 
     if not summary_items:
-        st.info("No aggregates available yet. Process more events via the worker.")
+        st.info(
+            "No aggregates available yet. Ensure the worker is running and events "
+            "are being ingested."
+        )
         return
 
     df = pd.DataFrame(summary_items)

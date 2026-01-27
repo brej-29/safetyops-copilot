@@ -11,6 +11,16 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class SystemStatusResponse(BaseModel):
+    api_ok: bool
+    database_ok: bool
+    database_error: str | None = None
+    redis_ok: bool
+    redis_error: str | None = None
+    worker_last_heartbeat: datetime | None = None
+    worker_seconds_since_heartbeat: float | None = None
+
+
 class EnrichedEventResponse(BaseModel):
     id: str
     event_type: EventType

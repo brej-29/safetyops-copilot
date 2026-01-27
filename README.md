@@ -112,13 +112,25 @@ Core layout (created for v1):
 
 ## Getting Started
 
-### 1. Prerequisites
+For a full, step-by-step local run manual (with copy-paste commands for macOS, Linux, and Windows), see:
+
+- `context/06_LOCAL_RUN_GUIDE.md`
+
+A detailed free-tier deployment guide lives in:
+
+- `context/07_FREE_DEPLOY_GUIDE.md`
+
+Below is a concise quickstart.
+
+### Quickstart (Local)
+
+#### 1. Prerequisites
 
 - Python **3.10+**
 - Docker and Docker Compose
 - `make` (optional but convenient)
 
-### 2. Setup environment
+#### 2. Setup environment
 
 ```bash
 # Clone the repo and cd into it
@@ -130,15 +142,15 @@ python -m venv .venv
 source .venv/bin/activate  # on Windows: .venv\Scripts\activate
 
 # Install dependencies
-make install  # or: pip install -r requirements-dev.txt
+make install  # or: python -m pip install --upgrade pip && pip install -r requirements-dev.txt
 
 # Copy example env and adjust values if needed
 cp .env.example .env
 ```
 
-By default, the app expects local Postgres and Redis as defined in `infra/docker-compose.local.yml`.
+By default, the app expects local Postgres and Redis as defined in `infra/docker-compose.local.yml`. For a Docker-free demo you can instead set `SAFETYOPS_DATABASE_URL=sqlite:///./safetyops.db` in `.env`.
 
-### 3. Start local infra (Postgres, Redis, MLflow, Prometheus, Grafana)
+#### 3. Start local infra (Postgres, Redis, MLflow, Prometheus, Grafana)
 
 ```bash
 make up
@@ -154,25 +166,31 @@ This brings up:
 - Prometheus on `localhost:9090`
 - Grafana on `localhost:3000`
 
-### 4. Run services locally
+#### 4. Run services locally
 
 In **three separate terminals** (with the venv activated):
 
 **API (FastAPI + Uvicorn)**
 
 ```bash
+make api
+# or:
 uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 **Worker**
 
 ```bash
+make worker
+# or:
 python -m services.worker.run
 ```
 
 **UI (Streamlit)**
 
 ```bash
+make ui
+# or:
 streamlit run apps/ui/main.py --server.port 8501
 ```
 
@@ -309,6 +327,20 @@ Key variables (prefix `SAFETYOPS_`):
 | `SAFETYOPS_METRICS_NAMESPACE`   | `safetyops`                                                       | Prefix/namespace for Prometheus metrics          |
 
 Update `.env.example` and `.env` if new configuration is introduced.
+
+---
+
+## Deploy (Free Tiers)
+
+For a detailed guide to deploying on Streamlit Community Cloud and Hugging Face Spaces (with optional managed Redis/Postgres), see:
+
+- `context/07_FREE_DEPLOY_GUIDE.md`
+
+It describes:
+
+- A simple Streamlit-only demo mode.
+- A more realistic API + UI deployment with free managed services.
+- Recommended environment variables and trade-offs for SQLite vs Postgres.
 
 ---
 

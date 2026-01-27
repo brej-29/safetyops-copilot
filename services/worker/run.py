@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import signal
 import time
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis
@@ -75,6 +76,23 @@ def _compute_risk_score(severity: str, compliance_score: Optional[float], create
 
 def _get_redis_client() -> redis.Redis:
     return redis.Redis.from_url(settings.redis_url, decode_responses=False)
+
+
+def _update_worker_heartbeat() -> None:
+    """Record a lightweight heartbeat for the worker in Redis.
+
+    Failures are logged but do not stop the worker loop.
+    """
+    try:
+        client = _get_redis_client()
+        key = f"{settings.metrics_namespace}:worker:heartbeat"
+        now = datetime.now(timezone.utc).isoformat()
+        client.set(key, now.encode("utf-8"))
+    except Exception as exc:
+        logger.exception(
+            "Failed to update worker heartbeat",
+            extra={"error": str(exc)},
+        )
 
 
 def _send_to_dlq(message_id: str, envelope: EventEnvelope, error: Exception) -> None:
@@ -237,6 +255,7 @@ def run_worker_loop(poll_batch_size: int = 10, block_ms: int = 5000) -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
 
     while not _shutdown:
+        _update_worker_heartbeat()
         events = event_bus.consume(count=poll_batch_size, block_ms=block_ms)
         if not events:
             continue
