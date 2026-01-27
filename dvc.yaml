@@ -1,0 +1,34 @@
+stages:
+  download_data:
+    cmd: |
+      python scripts/download_text_dataset.py
+      python scripts/download_vision_dataset.py
+    deps:
+      - scripts/download_text_dataset.py
+      - scripts/download_vision_dataset.py
+    outs:
+      - data/text
+      - data/vision
+
+  train_nlp:
+    cmd: python -m safetyops.ml.nlp.train --data-path data/text/incidents_synthetic.csv --output-dir models/nlp
+    deps:
+      - data/text/incidents_synthetic.csv
+      - safetyops/ml/nlp/train.py
+    outs:
+      - models/nlp
+
+  eval_nlp:
+    cmd: python -m safetyops.ml.nlp.train --data-path data/text/incidents_synthetic.csv --output-dir models/nlp --eval-only
+    deps:
+      - data/text/incidents_synthetic.csv
+      - models/nlp
+      - safetyops/ml/nlp/train.py
+
+  train_vision:
+    cmd: python -m safetyops.ml.vision.train --data-root data/vision/ppe --output-dir artifacts/vision
+    deps:
+      - data/vision/ppe
+      - safetyops/ml/vision/train.py
+    outs:
+      - artifacts/vision

@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "safetyops-api"
+    static_configs:
+      # For Docker for Mac/Windows, host.docker.internal points to the host machine.
+      # On Linux, you may need to adjust this to the host IP or a container name.
+      - targets: ["host.docker.internal:8000"]
