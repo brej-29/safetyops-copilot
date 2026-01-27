@@ -62,7 +62,11 @@ def main() -> None:
             agg_date = envelope.created_at.date()
             aggregate = (
                 session.query(DailyAggregate)
-                .filter_by(date=agg_date, event_type=envelope.event_type.value, severity=prediction.severity)
+                .filter_by(
+                    date=agg_date,
+                    event_type=envelope.event_type.value,
+                    severity=prediction.severity,
+                )
                 .one_or_none()
             )
             if aggregate is None:

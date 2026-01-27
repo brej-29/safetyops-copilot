@@ -15,7 +15,11 @@ class RawEvent(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     event_type: Mapped[str] = mapped_column(String, nullable=False, index=True)
     payload: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+    )
     correlation_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
     stream_message_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, unique=True)
 
@@ -30,10 +34,19 @@ class EnrichedEvent(Base):
     __tablename__ = "enriched_events"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    raw_event_id: Mapped[str] = mapped_column(String, ForeignKey("raw_events.id"), nullable=False, index=True)
+    raw_event_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("raw_events.id"),
+        nullable=False,
+        index=True,
+    )
     event_type: Mapped[str] = mapped_column(String, nullable=False, index=True)
     enrichment: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+    )
     correlation_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
     severity: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
     category: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)

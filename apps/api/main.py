@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 from pathlib import Path
 from typing import List
 
@@ -32,6 +32,7 @@ from safetyops.domain.responses import (
     CopilotTriageContextEvent,
     EnrichedEventResponse,
     HealthResponse,
+    SystemStatusResponse,
 )
 from safetyops.monitoring import EVENTS_INGESTED
 from safetyops.streaming import RedisStreamsEventBus
@@ -110,6 +111,59 @@ def metrics() -> Response:
     """Prometheus metrics endpoint."""
     data = generate_latest()
     return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/system/status", response_model=SystemStatusResponse)
+def system_status() -> SystemStatusResponse:
+    """Return basic system health information for the UI."""
+
+    # Database check
+    db_ok = True
+    db_error: str | None = None
+    try:
+        with get_session() as session:
+            session.execute(select(1))
+    except Exception as exc:
+        logger.exception("Database health check failed")
+        db_ok = False
+        db_error = str(exc)
+
+    # Redis + worker heartbeat check
+    redis_ok = True
+    redis_error: str | None = None
+    last_worker_heartbeat: datetime | None = None
+    seconds_since_heartbeat: float | None = None
+
+    try:
+        client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
+        client.ping()
+        heartbeat_key = f"{settings.metrics_namespace}:worker:heartbeat"
+        raw_hb = client.get(heartbeat_key)
+        if raw_hb:
+            try:
+                last_worker_heartbeat = datetime.fromisoformat(raw_hb)
+                seconds_since_heartbeat = (
+                    datetime.now(timezone.utc) - last_worker_heartbeat
+                ).total_seconds()
+            except Exception:
+                logger.exception(
+                    "Failed to parse worker heartbeat timestamp",
+                    extra={"raw": raw_hb},
+                )
+    except Exception as exc:
+        logger.exception("Redis health check failed")
+        redis_ok = False
+        redis_error = str(exc)
+
+    return SystemStatusResponse(
+        api_ok=True,
+        database_ok=db_ok,
+        database_error=db_error,
+        redis_ok=redis_ok,
+        redis_error=redis_error,
+        worker_last_heartbeat=last_worker_heartbeat,
+        worker_seconds_since_heartbeat=seconds_since_heartbeat,
+    )
 
 
 @app.post("/events/text", status_code=202)
@@ -262,7 +316,12 @@ def get_recent_dlq_messages(limit: int = 50) -> dict:
     client = redis.Redis.from_url(settings.redis_url, decode_responses=False)
     try:
         # Use XREVRANGE to get most recent messages first
-        entries = client.xrevrange(settings.dlq_stream_key, max="+", min="-", count=limit)
+        entries = client.xrevrange(
+            settings.dlq_stream_key,
+            max="+",
+            min="-",
+            count=limit,
+        )
     except Exception as exc:
         logger.exception("Failed to read from DLQ stream")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -293,9 +352,16 @@ def reprocess_from_dlq(message_id: str) -> dict:
     """
     client = redis.Redis.from_url(settings.redis_url, decode_responses=False)
     try:
-        entries = client.xrange(settings.dlq_stream_key, min=message_id, max=message_id)
+        entries = client.xrange(
+            settings.dlq_stream_key,
+            min=message_id,
+            max=message_id,
+        )
     except Exception as exc:
-        logger.exception("Failed to read specific message from DLQ", extra={"message_id": message_id})
+        logger.exception(
+            "Failed to read specific message from DLQ",
+            extra={"message_id": message_id},
+        )
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     if not entries:
@@ -318,8 +384,14 @@ def reprocess_from_dlq(message_id: str) -> dict:
         else:
             envelope = EventEnvelope.model_validate(envelope_json)
     except Exception as exc:
-        logger.exception("Failed to parse DLQ payload for reprocessing", extra={"message_id": message_id})
-        raise HTTPException(status_code=500, detail="Invalid DLQ payload; cannot reprocess") from exc
+        logger.exception(
+            "Failed to parse DLQ payload for reprocessing",
+            extra={"message_id": message_id},
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid DLQ payload; cannot reprocess",
+        ) from exc
 
     new_message_id = _event_bus.publish(envelope)
     return {"reprocessed_event_id": envelope.id, "new_message_id": new_message_id}

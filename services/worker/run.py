@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import signal
 import time
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis
@@ -77,6 +78,23 @@ def _get_redis_client() -> redis.Redis:
     return redis.Redis.from_url(settings.redis_url, decode_responses=False)
 
 
+def _update_worker_heartbeat() -> None:
+    """Record a lightweight heartbeat for the worker in Redis.
+
+    Failures are logged but do not stop the worker loop.
+    """
+    try:
+        client = _get_redis_client()
+        key = f"{settings.metrics_namespace}:worker:heartbeat"
+        now = datetime.now(timezone.utc).isoformat()
+        client.set(key, now.encode("utf-8"))
+    except Exception as exc:
+        logger.exception(
+            "Failed to update worker heartbeat",
+            extra={"error": str(exc)},
+        )
+
+
 def _send_to_dlq(message_id: str, envelope: EventEnvelope, error: Exception) -> None:
     client = _get_redis_client()
     payload = {
@@ -94,7 +112,11 @@ def _send_to_dlq(message_id: str, envelope: EventEnvelope, error: Exception) -> 
     DLQ_MESSAGES.inc()
     logger.error(
         "Sent message to DLQ",
-        extra={"dlq_stream": settings.dlq_stream_key, "message_id": message_id, "event_id": envelope.id},
+        extra={
+            "dlq_stream": settings.dlq_stream_key,
+            "message_id": message_id,
+            "event_id": envelope.id,
+        },
     )
 
 
@@ -115,7 +137,11 @@ def process_event(envelope: EventEnvelope, message_id: str) -> None:
         raw = RawEvent(
             id=envelope.id,
             event_type=envelope.event_type.value,
-            payload=envelope.payload.model_dump() if hasattr(envelope.payload, "model_dump") else {},
+            payload=(
+                envelope.payload.model_dump()
+                if hasattr(envelope.payload, "model_dump")
+                else {}
+            ),
             created_at=envelope.created_at,
             correlation_id=envelope.correlation_id,
             stream_message_id=message_id,
@@ -215,7 +241,11 @@ def run_worker_loop(poll_batch_size: int = 10, block_ms: int = 5000) -> None:
     configure_logging()
     logger.info(
         "Starting SafetyOps worker",
-        extra={"env": settings.env, "stream_key": settings.stream_key, "consumer_group": settings.consumer_group},
+        extra={
+            "env": settings.env,
+            "stream_key": settings.stream_key,
+            "consumer_group": settings.consumer_group,
+        },
     )
 
     event_bus = RedisStreamsEventBus()
@@ -225,6 +255,7 @@ def run_worker_loop(poll_batch_size: int = 10, block_ms: int = 5000) -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
 
     while not _shutdown:
+        _update_worker_heartbeat()
         events = event_bus.consume(count=poll_batch_size, block_ms=block_ms)
         if not events:
             continue

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import List, Optional
 
 import redis
@@ -28,7 +27,10 @@ class RedisStreamsEventBus(BaseEventBus):
         self.stream_key = stream_key or settings.stream_key
         self.consumer_group = consumer_group or settings.consumer_group
         self.consumer_name = consumer_name or settings.consumer_name
-        self._client = redis_client or redis.Redis.from_url(settings.redis_url, decode_responses=False)
+        self._client = redis_client or redis.Redis.from_url(
+            settings.redis_url,
+            decode_responses=False,
+        )
 
     def publish(self, event: EventEnvelope) -> str:
         payload = event.model_dump_json()
@@ -38,13 +40,21 @@ class RedisStreamsEventBus(BaseEventBus):
                 message_id = message_id.decode()
             logger.info(
                 "Published event to stream",
-                extra={"stream_key": self.stream_key, "event_type": event.event_type.value, "event_id": event.id},
+                extra={
+                    "stream_key": self.stream_key,
+                    "event_type": event.event_type.value,
+                    "event_id": event.id,
+                },
             )
             return message_id
         except Exception as exc:
             logger.exception(
                 "Failed to publish event to Redis stream",
-                extra={"stream_key": self.stream_key, "event_type": event.event_type.value, "event_id": event.id},
+                extra={
+                    "stream_key": self.stream_key,
+                    "event_type": event.event_type.value,
+                    "event_id": event.id,
+                },
             )
             raise StreamingError("Failed to publish event") from exc
 
@@ -138,11 +148,19 @@ class RedisStreamsEventBus(BaseEventBus):
             self._client.xack(self.stream_key, self.consumer_group, message_id)
             logger.info(
                 "Acknowledged Redis stream message",
-                extra={"stream_key": self.stream_key, "consumer_group": self.consumer_group, "message_id": message_id},
+                extra={
+                    "stream_key": self.stream_key,
+                    "consumer_group": self.consumer_group,
+                    "message_id": message_id,
+                },
             )
         except Exception as exc:
             logger.exception(
                 "Failed to ack Redis stream message",
-                extra={"stream_key": self.stream_key, "consumer_group": self.consumer_group, "message_id": message_id},
+                extra={
+                    "stream_key": self.stream_key,
+                    "consumer_group": self.consumer_group,
+                    "message_id": message_id,
+                },
             )
             raise StreamingError("Failed to ack message") from exc

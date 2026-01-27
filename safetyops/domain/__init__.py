@@ -2,12 +2,11 @@
 from safetyops.domain.events import (
     EventEnvelope,
     EventType,
-    TextEventRequest,
-    VisionEventRequest,
     TextEventPayload,
+    TextEventRequest,
     VisionEventPayload,
+    VisionEventRequest,
 )
-
 from safetyops.domain.predictions import (
     TextClassificationPrediction,
     VisionPPEDetection,

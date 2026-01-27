@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Dict, List, Tuple
 
 from safetyops.domain.events import EventEnvelope, EventType, TextEventPayload
 from safetyops.streaming.redis_streams import RedisStreamsEventBus
@@ -21,7 +21,13 @@ class FakeRedis:
         self.streams.setdefault(key, []).append((message_id, stored_fields))
         return message_id
 
-    def xgroup_create(self, name: str, groupname: str, id: str = "0-0", mkstream: bool = True) -> None:
+    def xgroup_create(
+        self,
+        name: str,
+        groupname: str,
+        id: str = "0-0",
+        mkstream: bool = True,
+    ) -> None:
         self.groups_created.append((name, groupname))
 
     def xreadgroup(
