@@ -134,11 +134,17 @@ def _write_report(state: TriageState) -> TriageState:
 
     context_summary_lines = []
     for ev in context_events[:5]:
+        risk_str = ev.risk_score if ev.risk_score is not None else "n/a"
         context_summary_lines.append(
-            f"- [{ev.created_at.isoformat()}] {ev.category or 'unknown'} / {ev.severity or 'unknown'} "
-            f"(risk={ev.risk_score if ev.risk_score is not None else 'n/a'})"
+            f"- [{ev.created_at.isoformat()}] "
+            f"{ev.category or 'unknown'} / {ev.severity or 'unknown'} "
+            f"(risk={risk_str})"
         )
-    context_summary = "\n".join(context_summary_lines) if context_summary_lines else "No closely related events in the last 7 days."
+    context_summary = (
+        "\n".join(context_summary_lines)
+        if context_summary_lines
+        else "No closely related events in the last 7 days."
+    )
 
     report = f"""# Incident Triage Brief
 
@@ -174,7 +180,8 @@ Recent related events:
 
 ## Compliance and logging
 
-- Log this incident in the official safety / EHS system with category `{category}` and severity `{severity}`.
+- Log this incident in the official safety / EHS system with
+  category `{category}` and severity `{severity}`.
 - Attach any relevant photos, witness statements, and follow-up notes.
 - Ensure evidence of completed corrective actions is recorded.
 """
@@ -264,7 +271,11 @@ def run_triage_workflow(
         with get_session() as session:
             row = session.query(EnrichedEvent).filter_by(id=incident_id).one_or_none()
             if row is not None:
-                resolved_text = str(row.enrichment.get("text") or row.enrichment.get("summary") or "")
+                resolved_text = str(
+                    row.enrichment.get("text")
+                    or row.enrichment.get("summary")
+                    or ""
+                )
                 resolved_incident_id = row.id
 
     if not resolved_text:

@@ -94,7 +94,11 @@ def _send_to_dlq(message_id: str, envelope: EventEnvelope, error: Exception) -> 
     DLQ_MESSAGES.inc()
     logger.error(
         "Sent message to DLQ",
-        extra={"dlq_stream": settings.dlq_stream_key, "message_id": message_id, "event_id": envelope.id},
+        extra={
+            "dlq_stream": settings.dlq_stream_key,
+            "message_id": message_id,
+            "event_id": envelope.id,
+        },
     )
 
 
@@ -115,7 +119,11 @@ def process_event(envelope: EventEnvelope, message_id: str) -> None:
         raw = RawEvent(
             id=envelope.id,
             event_type=envelope.event_type.value,
-            payload=envelope.payload.model_dump() if hasattr(envelope.payload, "model_dump") else {},
+            payload=(
+                envelope.payload.model_dump()
+                if hasattr(envelope.payload, "model_dump")
+                else {}
+            ),
             created_at=envelope.created_at,
             correlation_id=envelope.correlation_id,
             stream_message_id=message_id,
@@ -215,7 +223,11 @@ def run_worker_loop(poll_batch_size: int = 10, block_ms: int = 5000) -> None:
     configure_logging()
     logger.info(
         "Starting SafetyOps worker",
-        extra={"env": settings.env, "stream_key": settings.stream_key, "consumer_group": settings.consumer_group},
+        extra={
+            "env": settings.env,
+            "stream_key": settings.stream_key,
+            "consumer_group": settings.consumer_group,
+        },
     )
 
     event_bus = RedisStreamsEventBus()

@@ -5,7 +5,7 @@ import csv
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Dict, List, Tuple
 
 import mlflow
 import numpy as np
@@ -38,8 +38,16 @@ class IncidentRecord:
     severity: str
 
 
-class IncidentDataset(Dataset[Dict[str, torch.Tensor]]):
-    def __init__(self, records: List[IncidentRecord], tokenizer: AutoTokenizer, max_length: int = 128) -> None:
+BatchEncoding = Dict[str, torch.Tensor]
+
+
+class IncidentDataset(Dataset[BatchEncoding]):
+    def __init__(
+        self,
+        records: List[IncidentRecord],
+        tokenizer: AutoTokenizer,
+        max_length: int = 128,
+    ) -> None:
         self.records = records
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -117,7 +125,9 @@ def compute_metrics(eval_pred: Tuple[np.ndarray, np.ndarray]) -> Dict[str, float
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Fine-tune DistilBERT on synthetic incident severity data.")
+    parser = argparse.ArgumentParser(
+        description="Fine-tune DistilBERT on synthetic incident severity data.",
+    )
     parser.add_argument(
         "--data-path",
         type=str,

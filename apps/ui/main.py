@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import httpx
 import pandas as pd
@@ -129,7 +129,10 @@ def _render_incident_triage_tab() -> None:
 
         client = get_http_client()
         try:
-            response = client.post("/events/text", json={"text": text, "metadata": {"source": "ui-triage"}})
+            response = client.post(
+                "/events/text",
+                json={"text": text, "metadata": {"source": "ui-triage"}},
+            )
             response.raise_for_status()
             st.success("Incident submitted for triage")
         except httpx.HTTPError as exc:
@@ -267,7 +270,10 @@ def _render_monitoring_tab() -> None:
         metrics_summary = _fetch_metrics_summary()
         if metrics_summary:
             st.metric("Events ingested", metrics_summary.get("events_ingested_total", 0))
-            st.metric("Events processed (success)", metrics_summary.get("events_processed_success", 0))
+            st.metric(
+                "Events processed (success)",
+                metrics_summary.get("events_processed_success", 0),
+            )
             st.metric("Events processed to DLQ", metrics_summary.get("events_processed_dlq", 0))
             st.metric("DLQ messages total", metrics_summary.get("dlq_messages_total", 0))
 
@@ -305,7 +311,13 @@ def _render_ops_dashboard_tab() -> None:
     df = pd.DataFrame(summary_items)
     st.markdown("### Counts by event type and severity")
 
-    pivot = df.pivot_table(index="event_type", columns="severity", values="count", aggfunc="sum", fill_value=0)
+    pivot = df.pivot_table(
+        index="event_type",
+        columns="severity",
+        values="count",
+        aggfunc="sum",
+        fill_value=0,
+    )
     st.bar_chart(pivot)
 
     st.markdown("### Raw aggregate data")

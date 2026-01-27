@@ -5,8 +5,8 @@ from typing import Any, Dict, List
 import redis
 
 from safetyops.core.settings import settings
-from services.worker.run import _send_to_dlq  # type: ignore[attr-defined]
 from safetyops.domain.events import EventEnvelope, EventType, TextEventPayload
+from services.worker.run import _send_to_dlq  # type: ignore[attr-defined]
 
 
 class FakeRedis:

@@ -262,7 +262,12 @@ def get_recent_dlq_messages(limit: int = 50) -> dict:
     client = redis.Redis.from_url(settings.redis_url, decode_responses=False)
     try:
         # Use XREVRANGE to get most recent messages first
-        entries = client.xrevrange(settings.dlq_stream_key, max="+", min="-", count=limit)
+        entries = client.xrevrange(
+            settings.dlq_stream_key,
+            max="+",
+            min="-",
+            count=limit,
+        )
     except Exception as exc:
         logger.exception("Failed to read from DLQ stream")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -293,9 +298,16 @@ def reprocess_from_dlq(message_id: str) -> dict:
     """
     client = redis.Redis.from_url(settings.redis_url, decode_responses=False)
     try:
-        entries = client.xrange(settings.dlq_stream_key, min=message_id, max=message_id)
+        entries = client.xrange(
+            settings.dlq_stream_key,
+            min=message_id,
+            max=message_id,
+        )
     except Exception as exc:
-        logger.exception("Failed to read specific message from DLQ", extra={"message_id": message_id})
+        logger.exception(
+            "Failed to read specific message from DLQ",
+            extra={"message_id": message_id},
+        )
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     if not entries:
@@ -318,8 +330,14 @@ def reprocess_from_dlq(message_id: str) -> dict:
         else:
             envelope = EventEnvelope.model_validate(envelope_json)
     except Exception as exc:
-        logger.exception("Failed to parse DLQ payload for reprocessing", extra={"message_id": message_id})
-        raise HTTPException(status_code=500, detail="Invalid DLQ payload; cannot reprocess") from exc
+        logger.exception(
+            "Failed to parse DLQ payload for reprocessing",
+            extra={"message_id": message_id},
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid DLQ payload; cannot reprocess",
+        ) from exc
 
     new_message_id = _event_bus.publish(envelope)
     return {"reprocessed_event_id": envelope.id, "new_message_id": new_message_id}

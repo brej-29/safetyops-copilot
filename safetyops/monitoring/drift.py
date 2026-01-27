@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple
 
 import pandas as pd
 from evidently.metric_preset import DataDriftPreset, TextDriftPreset
@@ -61,7 +60,9 @@ def _load_current_data(limit: int = 500) -> pd.DataFrame:
     df = pd.DataFrame(
         {
             "text": texts,
-            "severity_numeric": pd.Series(severities).map({"low": 0, "medium": 1, "high": 2}).fillna(0),
+            "severity_numeric": pd.Series(severities)
+            .map({"low": 0, "medium": 1, "high": 2})
+            .fillna(0),
             "text_length": lengths,
         }
     )
