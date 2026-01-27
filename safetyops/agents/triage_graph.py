@@ -33,7 +33,11 @@ class TriageState(TypedDict, total=False):
 
 
 def _fetch_context(state: TriageState) -> TriageState:
-    """Fetch recent related events and aggregates from the DB."""
+    """Fetch recent related events and aggregates from the DB.
+
+    If the database is unavailable (e.g. in CI without Postgres), fall back to
+    an empty context so that the triage workflow still produces a report.
+    """
     text = state.get("text") or ""
     baseline = classify_incident(text) if text else None
     category = state.get("category") or (baseline.category if baseline else None)
@@ -45,53 +49,65 @@ def _fetch_context(state: TriageState) -> TriageState:
     context_events: List[CopilotTriageContextEvent] = []
     aggregates: Dict[str, Any] = {"by_category_severity": {}, "recent_hours": []}
 
-    with get_session() as session:
-        # Recent events with same category (if known), otherwise all recent
-        query = session.query(EnrichedEvent).filter(EnrichedEvent.created_at >= window_start)
-        if category:
-            query = query.filter(EnrichedEvent.category == category)
-        query = query.order_by(EnrichedEvent.created_at.desc()).limit(20)
-        rows = query.all()
+    try:
+        with get_session() as session:
+            # Recent events with same category (if known), otherwise all recent
+            query = session.query(EnrichedEvent).filter(
+                EnrichedEvent.created_at >= window_start
+            )
+            if category:
+                query = query.filter(EnrichedEvent.category == category)
+            query = query.order_by(EnrichedEvent.created_at.desc()).limit(20)
+            rows = query.all()
 
-        for row in rows:
-            enrichment = row.enrichment or {}
-            risk_score = enrichment.get("risk_score")
-            context_events.append(
-                CopilotTriageContextEvent(
-                    id=row.id,
-                    created_at=row.created_at,
-                    category=row.category,
-                    severity=row.severity,
-                    risk_score=risk_score if isinstance(risk_score, int) else None,
+            for row in rows:
+                enrichment = row.enrichment or {}
+                risk_score = enrichment.get("risk_score")
+                context_events.append(
+                    CopilotTriageContextEvent(
+                        id=row.id,
+                        created_at=row.created_at,
+                        category=row.category,
+                        severity=row.severity,
+                        risk_score=risk_score if isinstance(risk_score, int) else None,
+                    )
                 )
-            )
 
-        # Aggregates: counts by category, severity, hour over last 24h
-        hour_start = now - timedelta(hours=24)
-        hourly_rows = (
-            session.query(HourlyAggregate)
-            .filter(HourlyAggregate.date >= hour_start.date())
-            .order_by(HourlyAggregate.date.desc(), HourlyAggregate.hour.desc())
-            .limit(48)
-            .all()
+            # Aggregates: counts by category, severity, hour over last 24h
+            hour_start = now - timedelta(hours=24)
+            hourly_rows = (
+                session.query(HourlyAggregate)
+                .filter(HourlyAggregate.date >= hour_start.date())
+                .order_by(
+                    HourlyAggregate.date.desc(),
+                    HourlyAggregate.hour.desc(),
+                )
+                .limit(48)
+                .all()
+            )
+            series = []
+            for row in hourly_rows:
+                ts = datetime.combine(row.date, datetime.min.time()).replace(
+                    hour=row.hour
+                )
+                series.append(
+                    {
+                        "timestamp": ts.isoformat(),
+                        "event_type": row.event_type,
+                        "category": row.category,
+                        "severity": row.severity,
+                        "count": row.count,
+                    }
+                )
+                key = f"{row.category or 'unknown'}::{row.severity or 'unknown'}"
+                aggregates["by_category_severity"].setdefault(key, 0)
+                aggregates["by_category_severity"][key] += row.count
+
+            aggregates["recent_hours"] = series
+    except Exception:
+        logger.exception(
+            "Failed to fetch triage context from DB; continuing without context"
         )
-        series = []
-        for row in hourly_rows:
-            ts = datetime.combine(row.date, datetime.min.time()).replace(hour=row.hour)
-            series.append(
-                {
-                    "timestamp": ts.isoformat(),
-                    "event_type": row.event_type,
-                    "category": row.category,
-                    "severity": row.severity,
-                    "count": row.count,
-                }
-            )
-            key = f"{row.category or 'unknown'}::{row.severity or 'unknown'}"
-            aggregates["by_category_severity"].setdefault(key, 0)
-            aggregates["by_category_severity"][key] += row.count
-
-        aggregates["recent_hours"] = series
 
     state["category"] = category
     state["severity"] = severity
