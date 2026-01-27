@@ -321,7 +321,7 @@ Uses `ruff`:
 ```bash
 make lint
 # or:
-ruff .
+ruff check .
 ```
 
 Configuration lives in `ruff.toml` (PEP8-ish with basic import checks).

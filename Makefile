@@ -5,7 +5,7 @@ install:
 \tpip install -r requirements-dev.txt
 
 lint:
-\truff .
+	ruff check .
 
 test:
 \tpytest
@@ -17,4 +17,4 @@ down:
 \tdocker compose -f infra/docker-compose.local.yml down
 
 format:
-\truff --fix .
+	ruff check --fix .
