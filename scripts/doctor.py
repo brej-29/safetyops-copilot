@@ -4,7 +4,6 @@ import platform
 import shutil
 import subprocess
 import sys
-from typing import Optional
 
 from safetyops.core import get_logger, settings
 

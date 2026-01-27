@@ -11,6 +11,6 @@ def test_settings_load() -> None:
 
 def test_api_imports_without_side_effects() -> None:
     # Importing the API app should not require a running database or Redis.
-    from apps.api.main import app  # noqa: WPS433
+    from apps.api.main import app
 
     assert app.title == settings.app_name
