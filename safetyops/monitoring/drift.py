@@ -4,13 +4,20 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
-from evidently.metric_preset import DataDriftPreset, TextDriftPreset
-from evidently.report import Report
 
 from safetyops.core.logging import get_logger
 from safetyops.core.settings import settings
 from safetyops.db import EnrichedEvent
 from safetyops.db.session import get_session
+
+try:
+    from evidently.metric_preset import DataDriftPreset, TextDriftPreset
+    from evidently.report import Report
+
+    _EVIDENTLY_AVAILABLE = True
+except ModuleNotFoundError:
+    DataDriftPreset = TextDriftPreset = Report = None  # type: ignore[assignment]
+    _EVIDENTLY_AVAILABLE = False
 
 logger = get_logger(__name__)
 
@@ -74,10 +81,29 @@ def build_drift_report(
     current: pd.DataFrame,
     output_path: Path,
 ) -> None:
-    """Build a combined text + numeric drift report and save as HTML."""
+    """Build a combined text + numeric drift report and save as HTML.
+
+    If Evidently (with the required metric presets) is not available, this
+    function writes a minimal stub HTML report so that tests and the UI can
+    continue to function in constrained environments.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not _EVIDENTLY_AVAILABLE or Report is None:
+        stub_html = (
+            "<html><body><h1>Drift report unavailable</h1>"
+            "<p>Evidently is not installed or metric presets are unavailable.</p>"
+            "</body></html>"
+        )
+        output_path.write_text(stub_html, encoding="utf-8")
+        logger.warning(
+            "Evidently not available; wrote stub drift report instead",
+            extra={"output_path": str(output_path)},
+        )
+        return
+
     report = Report(metrics=[TextDriftPreset(column_name="text"), DataDriftPreset()])
     report.run(reference_data=reference, current_data=current)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
     report.save_html(str(output_path))
 
 
