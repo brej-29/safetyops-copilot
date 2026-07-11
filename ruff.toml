@@ -5,3 +5,7 @@ exclude = ["notebooks"]
 [lint]
 select = ["E", "F"]
 ignore = []
+
+[lint.per-file-ignores]
+# Markdown tables and user-facing copy can't be line-wrapped.
+"apps/ui/main.py" = ["E501"]

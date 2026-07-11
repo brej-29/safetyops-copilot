@@ -208,10 +208,18 @@ async def create_vision_event(
 
     resolved_image_path: str | None = image_path
     if image_file is not None:
+        # Never trust the client-supplied filename: it can contain path
+        # traversal (e.g. ../../x). Store under a random name instead, and
+        # only accept common image extensions with a sane size cap.
+        suffix = Path(image_file.filename or "").suffix.lower()
+        if suffix not in {".jpg", ".jpeg", ".png"}:
+            raise HTTPException(status_code=400, detail="Only .jpg/.jpeg/.png uploads are accepted")
         uploads_dir = Path("data/uploads")
         uploads_dir.mkdir(parents=True, exist_ok=True)
-        file_path = uploads_dir / image_file.filename
+        file_path = uploads_dir / f"{uuid.uuid4().hex}{suffix}"
         content = await image_file.read()
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Image too large (max 10 MB)")
         try:
             file_path.write_bytes(content)
         except OSError as exc:
