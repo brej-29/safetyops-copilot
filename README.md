@@ -1,4 +1,27 @@
-# SafetyOps Copilot
+<div align="center">
+  <h1>🦺 safetyops-copilot</h1>
+  <p><i>Production-style safety-incident pipeline with a LangGraph triage Copilot,
+  a DistilBERT severity model fine-tuned on 273k real accident reports, and
+  YOLOv8 PPE detection — deployed live on free-tier cloud infrastructure.</i></p>
+</div>
+
+<br>
+
+<div align="center">
+  <img alt="Language" src="https://img.shields.io/badge/Language-Python-blue">
+  <img alt="Backend" src="https://img.shields.io/badge/Backend-FastAPI-009688">
+  <img alt="Streaming" src="https://img.shields.io/badge/Streaming-Redis%20Streams-DC382D">
+  <img alt="Database" src="https://img.shields.io/badge/Database-PostgreSQL-336791">
+  <img alt="ML" src="https://img.shields.io/badge/ML-DistilBERT%20%7C%20YOLOv8-ff9800">
+  <img alt="Agent" src="https://img.shields.io/badge/Agent-LangGraph-1C3C3C">
+  <img alt="Frontend" src="https://img.shields.io/badge/Frontend-Streamlit-ff4b4b">
+  <img alt="Tests" src="https://img.shields.io/badge/Tests-36%20passing-brightgreen">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-black">
+</div>
+
+<br>
+
+**🚀 [Live demo](https://safetyops-copilot.streamlit.app/)** — try it with sample incident reports and site photos, no setup required.
 
 A production-style **SafetyOps Copilot** for monitoring safety incidents from:
 
@@ -7,9 +30,9 @@ A production-style **SafetyOps Copilot** for monitoring safety incidents from:
 
 The system is designed to be:
 
-- **Local-first, free-first** – runs on a laptop with Docker and CPU-only dependencies.
-- **Production-shaped** – clear separation between API, worker, UI, and infra.
-- **AI-friendly** – context and decisions are documented to keep future changes grounded.
+- **Local-first, free-first** – runs on a laptop with Docker and CPU-only dependencies, and deploys entirely on free cloud tiers (Cloud Run, Neon, Upstash, Streamlit Cloud).
+- **Production-shaped** – clear separation between API, worker, UI, and infra; event-driven with retries, a dead-letter queue, and idempotent processing.
+- **Honestly evaluated** – the severity model is trained and tested on real public accident data, with baseline comparisons and documented limitations, not synthetic demo metrics.
 
 ---
 
