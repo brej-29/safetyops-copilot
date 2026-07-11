@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import redis
+from prometheus_client import start_http_server
 from tenacity import RetryError, retry, stop_after_attempt, wait_exponential
 
 from safetyops.core import configure_logging, get_logger, settings
@@ -245,6 +246,21 @@ def run_worker_loop(poll_batch_size: int = 10, block_ms: int = 5000) -> None:
             "consumer_group": settings.consumer_group,
         },
     )
+
+    # The worker has its own Prometheus registry (separate process from the
+    # API), so it must serve its own /metrics endpoint for Prometheus to
+    # scrape processing/DLQ/model-inference metrics.
+    try:
+        start_http_server(settings.worker_metrics_port)
+        logger.info(
+            "Worker metrics server listening",
+            extra={"port": settings.worker_metrics_port},
+        )
+    except OSError:
+        logger.warning(
+            "Could not start worker metrics server (port may be in use)",
+            extra={"port": settings.worker_metrics_port},
+        )
 
     event_bus = RedisStreamsEventBus()
     _ensure_schema_and_group(event_bus)

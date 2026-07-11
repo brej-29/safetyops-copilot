@@ -49,6 +49,10 @@ class Settings(BaseSettings):
 
     # Metrics
     metrics_namespace: str = "safetyops"
+    # The worker runs in its own process with its own Prometheus registry, so
+    # its metrics (processing rate/latency, DLQ count, model inference time)
+    # are invisible to the API's /metrics unless served separately here.
+    worker_metrics_port: int = 9100
 
     model_config = SettingsConfigDict(
         env_file=".env",

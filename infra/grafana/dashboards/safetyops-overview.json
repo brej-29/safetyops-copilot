@@ -1,0 +1,159 @@
+{
+  "title": "SafetyOps Copilot — Overview",
+  "uid": "safetyops-overview",
+  "tags": ["safetyops"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Events ingested (total)",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(safetyops_events_ingested_total)",
+          "legendFormat": "ingested",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" } }, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Events processed successfully",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(safetyops_events_processed_total{status=\"success\"})",
+          "legendFormat": "success",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "fixed", "fixedColor": "green" } },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "DLQ messages (total)",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(safetyops_dlq_messages_total)",
+          "legendFormat": "dlq",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Events processed with errors",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(safetyops_events_processed_total{status!=\"success\"})",
+          "legendFormat": "errors",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Ingestion rate by event type",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (event_type) (rate(safetyops_events_ingested_total[1m]))",
+          "legendFormat": "{{event_type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Processing rate by status",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(safetyops_events_processed_total[1m]))",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Worker processing latency (p95) by event type",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, event_type) (rate(safetyops_worker_processing_seconds_bucket[5m])))",
+          "legendFormat": "{{event_type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Model inference latency (p95) by model",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, model) (rate(safetyops_model_inference_seconds_bucket[5m])))",
+          "legendFormat": "{{model}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    }
+  ]
+}

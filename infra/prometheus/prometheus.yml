@@ -4,6 +4,17 @@ global:
 scrape_configs:
   - job_name: "safetyops-api"
     static_configs:
-      # For Docker for Mac/Windows, host.docker.internal points to the host machine.
-      # On Linux, you may need to adjust this to the host IP or a container name.
+      # Matches the primary documented dev flow: infra via `make up` (this
+      # Prometheus container), API/worker run on the host via `make api` /
+      # `make worker`. host.docker.internal resolves to the host machine on
+      # Docker Desktop (Mac/Windows); on Linux, use your host IP instead.
+      # If you instead run the API as the `api` compose service, change this
+      # to "api:8000".
       - targets: ["host.docker.internal:8000"]
+
+  - job_name: "safetyops-worker"
+    static_configs:
+      # The worker runs in its own process with its own metrics registry
+      # (see services/worker/run.py's start_http_server call), so it must be
+      # scraped separately from the API. Same host-vs-compose note as above.
+      - targets: ["host.docker.internal:9100"]
