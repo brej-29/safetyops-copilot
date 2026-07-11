@@ -21,7 +21,10 @@ ARG INSTALL_ML=true
 RUN pip install --no-cache-dir -r requirements/api.txt -r requirements/worker.txt \
     && if [ "$INSTALL_ML" = "true" ]; then \
         # CPU-only torch keeps the image several GB smaller than the CUDA default.
-        pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+        # torchvision must come from the same index/version set as torch, or its
+        # compiled ops fail to register (RuntimeError: torchvision::nms does not
+        # exist) and transformers imports break.
+        pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
         && pip install --no-cache-dir -r requirements/ml.txt; \
     fi
 

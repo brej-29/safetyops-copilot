@@ -220,3 +220,4 @@ models/nlp/*
 models/vision/*.pt
 mlruns/
 mlartifacts/
+.deploy_api_key
