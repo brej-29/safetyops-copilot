@@ -30,6 +30,11 @@ class RedisStreamsEventBus(BaseEventBus):
         self._client = redis_client or redis.Redis.from_url(
             settings.redis_url,
             decode_responses=False,
+            # redis-py >= 8 defaults socket_timeout to 5s, which races the
+            # blocking XREADGROUP reads in consume(). Keep the socket timeout
+            # comfortably above any block_ms used by the worker.
+            socket_timeout=30,
+            socket_connect_timeout=5,
         )
 
     def publish(self, event: EventEnvelope) -> str:
@@ -99,6 +104,10 @@ class RedisStreamsEventBus(BaseEventBus):
                 count=count,
                 block=block_ms,
             )
+        except redis.exceptions.TimeoutError:
+            # A blocking read that times out without messages is normal idle
+            # behavior, not an error.
+            return []
         except Exception as exc:
             logger.exception(
                 "Failed to read from Redis stream",

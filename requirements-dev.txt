@@ -1,3 +1,9 @@
--r requirements.txt
+# Development and CI dependencies: all services (without heavy ML packages)
+# plus test/lint tooling. Install requirements/ml.txt separately when working
+# on model training or real inference.
+-r requirements/api.txt
+-r requirements/worker.txt
+-r requirements/ui.txt
 pytest>=8.0.0
 ruff>=0.3.0
+fakeredis>=2.21.0

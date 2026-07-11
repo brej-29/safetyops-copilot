@@ -105,7 +105,11 @@ Core layout (created for v1):
   - `grafana/` – placeholders for dashboards.
 - `.github/workflows/ci.yml` – CI pipeline (ruff + pytest).
 - `.env.example` – example environment configuration.
-- `requirements.txt`, `requirements-dev.txt` – Python dependencies.
+- `requirements/` – per-service dependency files:
+  - `base.txt` – shared runtime deps for the `safetyops` package.
+  - `api.txt`, `worker.txt`, `ui.txt` – slim installs per service.
+  - `ml.txt` – heavy ML deps (torch, transformers, ultralytics, mlflow); optional — inference falls back to rule-based/stub predictions without it.
+- `requirements.txt` – full install (all of the above); `requirements-dev.txt` – all services (no heavy ML) plus pytest/ruff/fakeredis.
 - `Makefile` – common commands.
 
 ---
@@ -126,7 +130,7 @@ Below is a concise quickstart.
 
 #### 1. Prerequisites
 
-- Python **3.10+**
+- Python **3.10–3.12** (3.11 recommended; heavy ML deps are not yet reliable on 3.13+)
 - Docker and Docker Compose
 - `make` (optional but convenient)
 
@@ -420,12 +424,12 @@ When you:
 
 **Q: YOLO or torch imports fail**
 
-- For running the system:
-  - Install dependencies from `requirements.txt` (includes `ultralytics` and `torch`).
+- For real model inference:
+  - Install the heavy ML dependencies: `pip install -r requirements/ml.txt`.
 - For CI or constrained environments:
   - The code is written with lazy imports and fallbacks:
     - Failures are logged.
-    - A stub PPE prediction is used so the pipeline continues to run.
+    - Text events fall back to the rule-based classifier; vision events use a stub PPE prediction so the pipeline continues to run.
 
 **Q: Tests are slow or flaky**
 

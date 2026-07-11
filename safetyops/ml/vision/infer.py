@@ -89,18 +89,15 @@ def run_ppe_inference(image_path: Optional[str]) -> VisionPPEDetection:
         )
         return _stub_ppe_detection()
 
-    timer = model_inference_seconds.labels(model="vision").time()
     try:
-        results = model(str(image_path_obj), verbose=False)
+        with model_inference_seconds.labels(model="vision").time():
+            results = model(str(image_path_obj), verbose=False)
     except Exception:
-        timer.observe(0.0)
         logger.exception(
             "Error during YOLO PPE inference; falling back to stub",
             extra={"image_path": image_path},
         )
         return _stub_ppe_detection()
-    finally:
-        timer.__exit__(None, None, None)
 
     try:
         result = results[0]

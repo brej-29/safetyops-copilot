@@ -1,0 +1,6 @@
+# Worker service (services/worker).
+# ML inference (DistilBERT severity, YOLO PPE) is optional: install
+# requirements/ml.txt as well to enable it. Without it the worker falls back
+# to the rule-based classifier and stub PPE predictions.
+-r base.txt
+psycopg2-binary>=2.9.9

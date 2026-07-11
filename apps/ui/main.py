@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, Dict, List
 
 import httpx
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 API_BASE_URL = os.getenv("SAFETYOPS_API_BASE_URL", "http://localhost:8000")
 DEPLOY_MODE = os.getenv("DEPLOY_MODE", os.getenv("SAFETYOPS_DEPLOY_MODE", "local"))
@@ -134,25 +134,29 @@ def _render_live_feed_tab() -> None:
             st.success("Demo events submitted")
 
         if st.button("Refresh feed"):
-            st.experimental_rerun()
+            st.rerun()
 
     with col_table:
         st.markdown("### Recent Enriched Events")
         st.caption("Auto-refreshing every 5 seconds")
-        st.experimental_autorefresh(interval=5000, key="live_feed_refresh")
+        _render_recent_events_table()
 
-        events = _fetch_recent_events(limit=100)
-        if events:
-            df = pd.DataFrame(events)
-            # Flatten enrichment for display if present
-            if "enrichment" in df.columns:
-                enrichment_cols = df["enrichment"].apply(lambda x: x or {})
-                enrichment_df = pd.json_normalize(enrichment_cols)
-                enrichment_df.columns = [f"enrich.{c}" for c in enrichment_df.columns]
-                df = pd.concat([df.drop(columns=["enrichment"]), enrichment_df], axis=1)
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.info("No enriched events available yet. Produce some demo events to get started.")
+
+@st.fragment(run_every="5s")
+def _render_recent_events_table() -> None:
+    """Auto-refreshing fragment showing the latest enriched events."""
+    events = _fetch_recent_events(limit=100)
+    if events:
+        df = pd.DataFrame(events)
+        # Flatten enrichment for display if present
+        if "enrichment" in df.columns:
+            enrichment_cols = df["enrichment"].apply(lambda x: x or {})
+            enrichment_df = pd.json_normalize(enrichment_cols)
+            enrichment_df.columns = [f"enrich.{c}" for c in enrichment_df.columns]
+            df = pd.concat([df.drop(columns=["enrichment"]), enrichment_df], axis=1)
+        st.dataframe(df, width="stretch")
+    else:
+        st.info("No enriched events available yet. Produce some demo events to get started.")
 
 
 def _render_incident_triage_tab() -> None:
@@ -199,7 +203,7 @@ def _render_incident_triage_tab() -> None:
         enrichment_df = pd.json_normalize(enrichment_cols)
         enrichment_df.columns = [f"enrich.{column}" for column in enrichment_df.columns]
         df = pd.concat([df.drop(columns=["enrichment"]), enrichment_df], axis=1)
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df, width="stretch")
 
 
 def _fetch_metrics_summary() -> Dict[str, Any]:
@@ -270,7 +274,8 @@ def _render_copilot_chat_tab() -> None:
 
     client = get_http_client()
     try:
-        resp = client.post("/copilot/triage", json={"text": text})
+        # Triage runs DB queries plus an optional LLM call; allow extra time.
+        resp = client.post("/copilot/triage", json={"text": text}, timeout=30.0)
         resp.raise_for_status()
     except httpx.HTTPError as exc:
         st.error(f"Failed to call Copilot triage: {exc}")
@@ -336,9 +341,7 @@ def _render_monitoring_tab() -> None:
             latest_path = None
 
         if latest_path and os.path.exists(latest_path):
-            with open(latest_path, "r", encoding="utf-8") as html_file:
-                html = html_file.read()
-            components.html(html, height=600, scrolling=True)
+            st.iframe(Path(latest_path), height=600)
         else:
             st.info(
                 "Generate a drift report to see an HTML preview here. "
@@ -372,7 +375,7 @@ def _render_ops_dashboard_tab() -> None:
     st.bar_chart(pivot)
 
     st.markdown("### Raw aggregate data")
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df, width="stretch")
 
 
 def main() -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import asynccontextmanager
 from datetime import date, timedelta, datetime, timezone
 from pathlib import Path
 from typing import List
@@ -39,13 +40,12 @@ from safetyops.streaming import RedisStreamsEventBus
 
 configure_logging()
 logger = get_logger(__name__)
-app = FastAPI(title=settings.app_name, version=settings.app_version)
 
 _event_bus = RedisStreamsEventBus()
 
 
-@app.on_event("startup")
-def on_startup() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """Initialize DB schema for local dev and ensure consumer group exists."""
     init_db()
     try:
@@ -53,6 +53,10 @@ def on_startup() -> None:
     except SafetyOpsError:
         # Logged in the event bus implementation; we surface it via /health.
         logger.exception("Failed to ensure Redis consumer group on startup")
+    yield
+
+
+app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
 
 
 @app.middleware("http")

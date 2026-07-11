@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -43,7 +43,8 @@ def _fetch_context(state: TriageState) -> TriageState:
     category = state.get("category") or (baseline.category if baseline else None)
     severity = state.get("severity") or (baseline.severity if baseline else None)
 
-    now = datetime.utcnow()
+    # Naive UTC to match the naive timestamps stored by SQLAlchemy DateTime columns.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     window_start = now - timedelta(days=7)
 
     context_events: List[CopilotTriageContextEvent] = []

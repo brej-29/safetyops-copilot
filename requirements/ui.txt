@@ -1,0 +1,5 @@
+# Streamlit UI (apps/ui) — standalone HTTP client against the API.
+# streamlit>=1.37 is required for st.fragment(run_every=...) auto-refresh.
+streamlit>=1.37.0
+httpx>=0.26.0
+pandas>=2.2.0
