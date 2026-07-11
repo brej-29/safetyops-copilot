@@ -27,3 +27,11 @@ os.environ["SAFETYOPS_LLM_API_KEY"] = ""
 os.environ["SAFETYOPS_LLM_MODEL"] = ""
 os.environ["SAFETYOPS_OLLAMA_BASE_URL"] = ""
 os.environ["SAFETYOPS_OLLAMA_MODEL"] = ""
+
+# Tests assume write endpoints are open and unthrottled by default; a
+# developer's .env may set real deployment values for these (e.g. after
+# configuring a production API key), which would otherwise leak in here since
+# Settings reads .env directly. Individual security tests override these via
+# monkeypatch.
+os.environ["SAFETYOPS_API_KEY"] = ""
+os.environ["SAFETYOPS_RATE_LIMIT_PER_MINUTE"] = "0"
