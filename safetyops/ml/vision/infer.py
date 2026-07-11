@@ -10,6 +10,7 @@ from safetyops.domain.predictions import VisionPPEDetection
 logger = get_logger(__name__)
 
 _YOLO_MODEL = None
+_LOAD_FAILED = False
 
 
 def _load_model():
@@ -17,11 +18,14 @@ def _load_model():
 
     This mirrors the behavior in the original yolo.py stub but centralizes
     configuration around SAFETYOPS_VISION_MODEL_PATH so that weights can be
-    swapped (e.g. fine-tuned PPE model).
+    swapped (e.g. fine-tuned PPE model). A failed load is cached so we don't
+    retry (and log a warning) on every event.
     """
-    global _YOLO_MODEL
+    global _YOLO_MODEL, _LOAD_FAILED
     if _YOLO_MODEL is not None:
         return _YOLO_MODEL
+    if _LOAD_FAILED:
+        return None
 
     try:
         from ultralytics import YOLO  # type: ignore[import]
@@ -30,7 +34,7 @@ def _load_model():
             "ultralytics.YOLO not available; using stub PPE predictions",
             exc_info=False,
         )
-        _YOLO_MODEL = None
+        _LOAD_FAILED = True
         return None
 
     model_path = Path(settings.vision_model_path)
@@ -45,7 +49,8 @@ def _load_model():
             "Failed to load YOLO model; using stub PPE predictions",
             exc_info=True,
         )
-        _YOLO_MODEL = None
+        _LOAD_FAILED = True
+        return None
 
     return _YOLO_MODEL
 
@@ -89,18 +94,15 @@ def run_ppe_inference(image_path: Optional[str]) -> VisionPPEDetection:
         )
         return _stub_ppe_detection()
 
-    timer = model_inference_seconds.labels(model="vision").time()
     try:
-        results = model(str(image_path_obj), verbose=False)
+        with model_inference_seconds.labels(model="vision").time():
+            results = model(str(image_path_obj), verbose=False)
     except Exception:
-        timer.observe(0.0)
         logger.exception(
             "Error during YOLO PPE inference; falling back to stub",
             extra={"image_path": image_path},
         )
         return _stub_ppe_detection()
-    finally:
-        timer.__exit__(None, None, None)
 
     try:
         result = results[0]
@@ -121,8 +123,17 @@ def run_ppe_inference(image_path: Optional[str]) -> VisionPPEDetection:
         )
         return _stub_ppe_detection()
 
+    # Supported label schemes:
+    # - Hard-hat head detectors (e.g. keremberke/yolov8n-hard-hat-detection):
+    #   each detection is a head labeled "Hardhat" or "NO-Hardhat".
+    # - Person + equipment detectors (custom fine-tunes): separate "person",
+    #   "helmet"/"hardhat", and "vest" classes.
+    # - Person-only models (COCO): persons can be counted but PPE cannot be
+    #   assessed, so compliance stays neutral.
     persons = 0
-    persons_with_ppe = 0
+    ppe_heads = 0
+    bare_heads = 0
+    equipment = 0
 
     try:
         # ultralytics boxes.data is typically a tensor: [x1, y1, x2, y2, conf, cls]
@@ -140,14 +151,17 @@ def run_ppe_inference(image_path: Optional[str]) -> VisionPPEDetection:
                     continue
 
             label = str(names.get(cls_idx, "")).lower()
-            is_person = "person" in label
-            is_helmet = any(x in label for x in ["helmet", "hardhat"])
-            is_vest = "vest" in label
+            has_hat = "hardhat" in label or "helmet" in label
+            is_negated = has_hat and ("no-" in label or "no_" in label or label.startswith("no "))
 
-            if is_person:
+            if is_negated:
+                bare_heads += 1
+            elif has_hat:
+                ppe_heads += 1
+            elif "vest" in label:
+                equipment += 1
+            elif "person" in label:
                 persons += 1
-            if is_person and (is_helmet or is_vest):
-                persons_with_ppe += 1
     except Exception:
         logger.exception(
             "Failed to parse YOLO detections; falling back to stub",
@@ -155,13 +169,32 @@ def run_ppe_inference(image_path: Optional[str]) -> VisionPPEDetection:
         )
         return _stub_ppe_detection()
 
-    if persons <= 0:
+    if persons > 0:
+        if ppe_heads + equipment > 0:
+            # Person + equipment detector: approximate one PPE item per person.
+            num_persons = persons
+            num_with_ppe = min(persons, ppe_heads + equipment)
+        else:
+            logger.info(
+                "Model detected persons but no PPE classes; compliance is neutral",
+                extra={"image_path": image_path, "persons": persons},
+            )
+            return VisionPPEDetection(
+                compliance_score=0.5,
+                num_persons=persons,
+                num_persons_with_ppe=0,
+            )
+    elif ppe_heads + bare_heads > 0:
+        # Head detector: every detection is a person; hard-hat heads comply.
+        num_persons = ppe_heads + bare_heads
+        num_with_ppe = ppe_heads
+    else:
         return _stub_ppe_detection()
 
-    compliance_score = max(0.0, min(1.0, persons_with_ppe / float(persons)))
+    compliance_score = max(0.0, min(1.0, num_with_ppe / float(num_persons)))
 
     return VisionPPEDetection(
         compliance_score=compliance_score,
-        num_persons=persons,
-        num_persons_with_ppe=persons_with_ppe,
+        num_persons=num_persons,
+        num_persons_with_ppe=num_with_ppe,
     )

@@ -9,6 +9,66 @@ The goal is to keep deployments easy, cheap (or free), and aligned with the exis
 
 ---
 
+## Quickstart: the recommended free stack (concrete steps)
+
+The repo ships a `Dockerfile` that runs the **API + worker together** on port
+7860 (`scripts/start_cloud.sh`), which is exactly what a Hugging Face Docker
+Space expects.
+
+| Piece      | Service                     | Free tier notes                          |
+|------------|-----------------------------|------------------------------------------|
+| API+worker | Hugging Face Space (Docker) | 2 vCPU / 16 GB, sleeps after inactivity  |
+| UI         | Streamlit Community Cloud   | main file `apps/ui/main.py`              |
+| Postgres   | Neon                        | free project, connection string          |
+| Redis      | Upstash                     | free tier covers demo Streams volume     |
+| NLP model  | Hugging Face Hub            | upload once with `scripts/upload_nlp_model.py` |
+| LLM        | Groq                        | free API key, OpenAI-compatible          |
+
+Steps:
+
+1. **Publish the NLP model** (one-time, from your machine):
+
+   ```bash
+   export HF_TOKEN=hf_...
+   python scripts/upload_nlp_model.py --repo <you>/safetyops-nlp-severity
+   ```
+
+2. **Create a Docker Space** on huggingface.co, point it at this repo (or push
+   the repo to the Space). The provided `Dockerfile` needs no changes.
+
+3. **Set Space secrets** (Settings → Variables and secrets):
+
+   ```
+   SAFETYOPS_DATABASE_URL   = postgresql+psycopg2://... (from Neon)
+   SAFETYOPS_REDIS_URL      = rediss://... (from Upstash)
+   SAFETYOPS_NLP_MODEL_HF_REPO = <you>/safetyops-nlp-severity
+   SAFETYOPS_VISION_MODEL_PATH = models/vision/ppe_yolov8n.pt
+   SAFETYOPS_API_KEY        = <random secret>       # protects write endpoints
+   SAFETYOPS_RATE_LIMIT_PER_MINUTE = 30
+   SAFETYOPS_LLM_BASE_URL   = https://api.groq.com/openai   # optional
+   SAFETYOPS_LLM_API_KEY    = gsk_...                        # optional
+   SAFETYOPS_LLM_MODEL      = llama-3.3-70b-versatile        # optional
+   ```
+
+   Models are fetched automatically at startup by `scripts/fetch_models.py`;
+   if a fetch fails the API still boots with rule-based/stub fallbacks.
+
+4. **Deploy the UI** on Streamlit Community Cloud with main file
+   `apps/ui/main.py` and secrets:
+
+   ```toml
+   SAFETYOPS_API_BASE_URL = "https://<you>-<space>.hf.space"
+   SAFETYOPS_DEPLOY_MODE = "cloud"
+   ```
+
+   Note: the UI's demo/triage buttons call write endpoints; if you set
+   `SAFETYOPS_API_KEY`, either leave demo ingestion open (unset the key) or
+   put the key in the UI secrets and forward it (see `apps/ui/main.py`).
+
+The sections below cover the same ground in more detail plus alternatives.
+
+---
+
 ## A. Deployment Options
 
 ### Option 1 – Streamlit UI only (single-process demo)

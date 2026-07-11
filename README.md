@@ -105,7 +105,11 @@ Core layout (created for v1):
   - `grafana/` – placeholders for dashboards.
 - `.github/workflows/ci.yml` – CI pipeline (ruff + pytest).
 - `.env.example` – example environment configuration.
-- `requirements.txt`, `requirements-dev.txt` – Python dependencies.
+- `requirements/` – per-service dependency files:
+  - `base.txt` – shared runtime deps for the `safetyops` package.
+  - `api.txt`, `worker.txt`, `ui.txt` – slim installs per service.
+  - `ml.txt` – heavy ML deps (torch, transformers, ultralytics, mlflow); optional — inference falls back to rule-based/stub predictions without it.
+- `requirements.txt` – full install (all of the above); `requirements-dev.txt` – all services (no heavy ML) plus pytest/ruff/fakeredis.
 - `Makefile` – common commands.
 
 ---
@@ -126,7 +130,7 @@ Below is a concise quickstart.
 
 #### 1. Prerequisites
 
-- Python **3.10+**
+- Python **3.10–3.12** (3.11 recommended; heavy ML deps are not yet reliable on 3.13+)
 - Docker and Docker Compose
 - `make` (optional but convenient)
 
@@ -256,15 +260,70 @@ Responsibilities:
 3. For each event:
    - Store a `RawEvent` row.
    - Run enrichment:
-     - **Text**: rule-based classifier (`safetyops.ml.nlp.classifier`).
-     - **Vision**: YOLO PPE wrapper (`safetyops.ml.vision.yolo`) with:
+     - **Text**: fine-tuned DistilBERT severity model (`safetyops.ml.nlp.infer`),
+       falling back to the rule-based classifier when the model or its heavy
+       dependencies are absent.
+     - **Vision**: YOLO PPE wrapper (`safetyops.ml.vision.infer`) with:
        - Lazy import of `ultralytics` and `torch`.
-       - Fallback stub if the model is unavailable (logged).
+       - Fallback stub if the model is unavailable (logged once).
    - Store an `EnrichedEvent` row.
    - Update `DailyAggregate` for `(date, event_type, severity)`.
    - Acknowledge the message to Redis.
 
 Metrics (Prometheus) capture publish and processing counts/timings.
+
+---
+
+## Models and Results
+
+### Text severity (DistilBERT, real data)
+
+`distilbert-base-uncased` fine-tuned on **real MSHA accident narratives**
+(273k public mine-safety reports; labels derived from the reported
+`DEGREE_INJURY` outcome — see [ADR-0015](context/03_DECISIONS_LOG.md) and
+[models/nlp/MODEL_CARD.md](models/nlp/MODEL_CARD.md)).
+
+Held-out test set (1,605 balanced samples):
+
+| Model               | Accuracy | Macro-F1 | High-severity recall |
+|---------------------|----------|----------|----------------------|
+| Rule-based baseline | 0.40     | 0.34     | 0.16                 |
+| **DistilBERT**      | **0.78** | **0.78** | **0.88**             |
+
+Reproduce:
+
+```bash
+pip install -r requirements/ml.txt
+python scripts/download_msha_dataset.py
+python -m safetyops.ml.nlp.train
+python -m safetyops.ml.nlp.evaluate
+```
+
+### PPE detection (YOLOv8)
+
+Hard-hat compliance scoring uses the community
+[`keremberke/yolov8n-hard-hat-detection`](https://huggingface.co/keremberke/yolov8n-hard-hat-detection)
+weights (mAP@0.5 ≈ 0.81 reported by the author on the hard-hat dataset):
+
+```bash
+python scripts/download_vision_model.py
+export SAFETYOPS_VISION_MODEL_PATH=models/vision/ppe_yolov8n.pt
+```
+
+Details and limitations: [models/vision/MODEL_CARD.md](models/vision/MODEL_CARD.md).
+
+### Copilot LLM enhancement (optional)
+
+Incident briefs can be rewritten by any OpenAI-compatible endpoint (Groq free
+tier, OpenAI, or local Ollama):
+
+```bash
+SAFETYOPS_LLM_BASE_URL=https://api.groq.com/openai
+SAFETYOPS_LLM_API_KEY=gsk_...
+SAFETYOPS_LLM_MODEL=llama-3.3-70b-versatile
+```
+
+Unconfigured or failing LLM calls degrade gracefully to the template report.
 
 ---
 
@@ -322,8 +381,14 @@ Key variables (prefix `SAFETYOPS_`):
 | `SAFETYOPS_ARTIFACTS_DIR`       | `artifacts`                                                       | Base directory for derived artifacts             |
 | `SAFETYOPS_NLP_MODEL_DIR`       | `models/nlp`                                                      | Directory containing the fine-tuned NLP model    |
 | `SAFETYOPS_VISION_MODEL_PATH`   | `yolov8n.pt`                                                      | YOLOv8 weights path (pretrained or fine-tuned)   |
-| `SAFETYOPS_OLLAMA_BASE_URL`     | *(unset)*                                                         | Base URL for local Ollama (optional)             |
-| `SAFETYOPS_OLLAMA_MODEL`        | *(unset)*                                                         | Ollama model name (e.g. `llama3`)                |
+| `SAFETYOPS_LLM_BASE_URL`        | *(unset)*                                                         | OpenAI-compatible LLM endpoint (Groq/Ollama/...) |
+| `SAFETYOPS_LLM_API_KEY`         | *(unset)*                                                         | API key for the LLM endpoint (if required)       |
+| `SAFETYOPS_LLM_MODEL`           | *(unset)*                                                         | LLM model name (e.g. `llama-3.3-70b-versatile`)  |
+| `SAFETYOPS_OLLAMA_BASE_URL`     | *(unset)*                                                         | Deprecated alias for `SAFETYOPS_LLM_BASE_URL`    |
+| `SAFETYOPS_OLLAMA_MODEL`        | *(unset)*                                                         | Deprecated alias for `SAFETYOPS_LLM_MODEL`       |
+| `SAFETYOPS_API_KEY`             | *(unset)*                                                         | If set, write endpoints require `X-API-Key`      |
+| `SAFETYOPS_RATE_LIMIT_PER_MINUTE` | `0`                                                             | Per-IP write-request limit (0 = disabled)        |
+| `SAFETYOPS_NLP_MODEL_HF_REPO`   | *(unset)*                                                         | HF Hub repo to fetch the NLP model from at startup |
 | `SAFETYOPS_METRICS_NAMESPACE`   | `safetyops`                                                       | Prefix/namespace for Prometheus metrics          |
 
 Update `.env.example` and `.env` if new configuration is introduced.
@@ -420,12 +485,12 @@ When you:
 
 **Q: YOLO or torch imports fail**
 
-- For running the system:
-  - Install dependencies from `requirements.txt` (includes `ultralytics` and `torch`).
+- For real model inference:
+  - Install the heavy ML dependencies: `pip install -r requirements/ml.txt`.
 - For CI or constrained environments:
   - The code is written with lazy imports and fallbacks:
     - Failures are logged.
-    - A stub PPE prediction is used so the pipeline continues to run.
+    - Text events fall back to the rule-based classifier; vision events use a stub PPE prediction so the pipeline continues to run.
 
 **Q: Tests are slow or flaky**
 

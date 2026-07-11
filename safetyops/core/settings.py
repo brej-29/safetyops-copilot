@@ -30,9 +30,22 @@ class Settings(BaseSettings):
     nlp_model_dir: str = "models/nlp"
     vision_model_path: str = "yolov8n.pt"
 
-    # Optional LLM (Ollama) for Copilot enhancements
+    # Optional LLM for Copilot report enhancement. Any OpenAI-compatible
+    # chat-completions endpoint works, e.g.:
+    #   Groq:   llm_base_url=https://api.groq.com/openai  (needs llm_api_key)
+    #   Ollama: llm_base_url=http://localhost:11434       (no key needed)
+    llm_base_url: str | None = None
+    llm_api_key: str | None = None
+    llm_model: str | None = None
+
+    # Deprecated aliases (kept for backwards compatibility; used when the
+    # llm_* settings above are unset).
     ollama_base_url: str | None = None
     ollama_model: str | None = None
+
+    # API protection (both opt-in; see apps/api/security.py)
+    api_key: str | None = None
+    rate_limit_per_minute: int = 0
 
     # Metrics
     metrics_namespace: str = "safetyops"

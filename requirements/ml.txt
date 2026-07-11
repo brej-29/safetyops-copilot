@@ -1,0 +1,11 @@
+# Heavy ML dependencies: model training and real (non-stub) inference.
+# Not required to run the API/worker/UI — inference degrades gracefully.
+-r base.txt
+torch>=2.1.0
+transformers>=4.38.0
+ultralytics>=8.1.0
+scikit-learn>=1.4.0
+numpy>=1.26.0
+matplotlib>=3.8.0
+mlflow>=2.10.0
+accelerate>=1.0.0

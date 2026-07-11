@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
-
-import torch
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from typing import Any, Optional
 
 from safetyops.core.logging import get_logger
 from safetyops.core.settings import settings
@@ -16,6 +13,7 @@ logger = get_logger(__name__)
 
 _MODEL = None
 _TOKENIZER = None
+_LOAD_FAILED = False
 _LABELS = ["low", "medium", "high"]
 
 
@@ -23,16 +21,29 @@ def _get_model_dir() -> Path:
     return Path(settings.nlp_model_dir)
 
 
-def _load_model() -> tuple[Optional[AutoModelForSequenceClassification], Optional[AutoTokenizer]]:
+def _load_model() -> tuple[Optional[Any], Optional[Any]]:
     """Lazily load the fine-tuned DistilBERT model, if available.
 
+    torch/transformers are imported lazily so that slim installations
+    (without requirements/ml.txt) fall back to the rule-based classifier.
     If the model directory is missing or loading fails, returns (None, None)
     and the caller should fall back to the rule-based classifier.
     """
-    global _MODEL, _TOKENIZER
+    global _MODEL, _TOKENIZER, _LOAD_FAILED
 
     if _MODEL is not None and _TOKENIZER is not None:
         return _MODEL, _TOKENIZER
+    if _LOAD_FAILED:
+        return None, None
+
+    try:
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+    except Exception:
+        logger.info(
+            "transformers/torch not installed; using rule-based classifier",
+        )
+        _LOAD_FAILED = True
+        return None, None
 
     model_dir = _get_model_dir()
     if not model_dir.exists():
@@ -40,6 +51,7 @@ def _load_model() -> tuple[Optional[AutoModelForSequenceClassification], Optiona
             "NLP model directory not found; using rule-based classifier",
             extra={"model_dir": str(model_dir)},
         )
+        _LOAD_FAILED = True
         return None, None
 
     try:
@@ -50,6 +62,7 @@ def _load_model() -> tuple[Optional[AutoModelForSequenceClassification], Optiona
             "Failed to load NLP model; falling back to rule-based classifier",
             extra={"model_dir": str(model_dir)},
         )
+        _LOAD_FAILED = True
         return None, None
 
     _MODEL = model
@@ -69,6 +82,8 @@ def predict_severity(text: str) -> TextClassificationPrediction:
     model, tokenizer = _load_model()
     if model is None or tokenizer is None:
         return rule_based_classify(text)
+
+    import torch
 
     try:
         encoded = tokenizer(

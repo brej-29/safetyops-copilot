@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -9,15 +9,22 @@ from safetyops.core.logging import get_logger
 from safetyops.core.settings import settings
 from safetyops.db import EnrichedEvent
 from safetyops.db.session import get_session
+from safetyops.domain.events import EventType
 
 try:
-    from evidently.metric_preset import DataDriftPreset, TextDriftPreset
+    from evidently.metric_preset import DataDriftPreset
     from evidently.report import Report
 
     _EVIDENTLY_AVAILABLE = True
-except ModuleNotFoundError:
-    DataDriftPreset = TextDriftPreset = Report = None  # type: ignore[assignment]
+except ImportError:
+    DataDriftPreset = Report = None  # type: ignore[assignment]
     _EVIDENTLY_AVAILABLE = False
+
+try:
+    # Only available in some evidently 0.4.x releases.
+    from evidently.metric_preset import TextDriftPreset
+except ImportError:
+    TextDriftPreset = None  # type: ignore[assignment]
 
 logger = get_logger(__name__)
 
@@ -44,7 +51,7 @@ def _load_current_data(limit: int = 500) -> pd.DataFrame:
     with get_session() as session:
         rows = (
             session.query(EnrichedEvent)
-            .filter(EnrichedEvent.event_type == "text")
+            .filter(EnrichedEvent.event_type == EventType.TEXT.value)
             .order_by(EnrichedEvent.created_at.desc())
             .limit(limit)
             .all()
@@ -102,8 +109,19 @@ def build_drift_report(
         )
         return
 
-    report = Report(metrics=[TextDriftPreset(column_name="text"), DataDriftPreset()])
-    report.run(reference_data=reference, current_data=current)
+    if TextDriftPreset is not None:
+        metrics = [TextDriftPreset(column_name="text"), DataDriftPreset()]
+        ref, cur = reference, current
+    else:
+        # Without the text preset, run numeric drift only; raw text would be
+        # treated as a high-cardinality categorical column and add noise.
+        metrics = [DataDriftPreset()]
+        numeric_cols = ["severity_numeric", "text_length"]
+        ref = reference[numeric_cols]
+        cur = current[numeric_cols]
+
+    report = Report(metrics=metrics)
+    report.run(reference_data=ref, current_data=cur)
     report.save_html(str(output_path))
 
 
@@ -116,7 +134,7 @@ def run_drift_analysis() -> Path:
     reference = _load_reference_data()
     current = _load_current_data()
 
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     output_path = DRIFT_REPORT_DIR / f"text_drift_{ts}.html"
 
     logger.info(

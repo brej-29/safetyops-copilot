@@ -1,0 +1,13 @@
+# FastAPI service (apps/api) — includes the triage agent and drift reporting.
+-r base.txt
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.7
+psycopg2-binary>=2.9.9
+alembic>=1.13.1
+langgraph>=0.0.57
+pandas>=2.2.0
+# Evidently 0.4.x is required for the metric presets used in
+# safetyops/monitoring/drift.py; 0.5+ changed the API. If unavailable,
+# drift reports degrade to a stub HTML page.
+evidently>=0.4.0,<0.5

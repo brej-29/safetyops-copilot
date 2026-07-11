@@ -9,6 +9,7 @@ import redis
 from tenacity import RetryError, retry, stop_after_attempt, wait_exponential
 
 from safetyops.core import configure_logging, get_logger, settings
+from safetyops.core.exceptions import SafetyOpsError
 from safetyops.db import DailyAggregate, EnrichedEvent, HourlyAggregate, RawEvent, init_db
 from safetyops.db.session import get_session
 from safetyops.domain.events import EventEnvelope, EventType
@@ -150,11 +151,8 @@ def process_event(envelope: EventEnvelope, message_id: str) -> None:
 
         if envelope.event_type == EventType.TEXT:
             # NLP severity model with rule-based fallback
-            nlp_timer = model_inference_seconds.labels(model="nlp").time()
-            try:
+            with model_inference_seconds.labels(model="nlp").time():
                 prediction = predict_severity(envelope.payload.text)  # type: ignore[attr-defined]
-            finally:
-                nlp_timer.__exit__(None, None, None)
             enrichment_data = prediction.model_dump()
             enrichment_data["text"] = envelope.payload.text  # type: ignore[attr-defined]
             category = prediction.category
@@ -256,7 +254,13 @@ def run_worker_loop(poll_batch_size: int = 10, block_ms: int = 5000) -> None:
 
     while not _shutdown:
         _update_worker_heartbeat()
-        events = event_bus.consume(count=poll_batch_size, block_ms=block_ms)
+        try:
+            events = event_bus.consume(count=poll_batch_size, block_ms=block_ms)
+        except SafetyOpsError:
+            # Transient Redis issues must not kill the worker; back off briefly.
+            logger.warning("Event bus consume failed; retrying shortly")
+            time.sleep(1.0)
+            continue
         if not events:
             continue
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import asynccontextmanager
 from datetime import date, timedelta, datetime, timezone
 from pathlib import Path
 from typing import List
@@ -12,6 +13,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from apps.api.security import enforce_write_policy
 from safetyops.agents.triage_graph import run_triage_workflow
 from safetyops.core import configure_logging, get_logger, set_correlation_id, settings
 from safetyops.core.exceptions import SafetyOpsError
@@ -39,20 +41,31 @@ from safetyops.streaming import RedisStreamsEventBus
 
 configure_logging()
 logger = get_logger(__name__)
-app = FastAPI(title=settings.app_name, version=settings.app_version)
 
 _event_bus = RedisStreamsEventBus()
 
 
-@app.on_event("startup")
-def on_startup() -> None:
-    """Initialize DB schema for local dev and ensure consumer group exists."""
-    init_db()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize DB schema and ensure the consumer group exists.
+
+    Both steps are best-effort: the API must still boot when the database or
+    Redis is unreachable (e.g. a cloud deployment before secrets are wired),
+    with the degraded state surfaced via /system/status.
+    """
+    try:
+        init_db()
+    except Exception:
+        logger.exception("Failed to initialize database schema on startup")
     try:
         _event_bus.ensure_consumer_group()
     except SafetyOpsError:
         # Logged in the event bus implementation; we surface it via /health.
         logger.exception("Failed to ensure Redis consumer group on startup")
+    yield
+
+
+app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -166,7 +179,7 @@ def system_status() -> SystemStatusResponse:
     )
 
 
-@app.post("/events/text", status_code=202)
+@app.post("/events/text", status_code=202, dependencies=[Depends(enforce_write_policy)])
 def create_text_event(request: Request, body: TextEventRequest) -> dict:
     """Ingest a text event and publish it to the stream."""
     correlation_id = request.headers.get("X-Correlation-ID")
@@ -184,7 +197,7 @@ def create_text_event(request: Request, body: TextEventRequest) -> dict:
     return {"event_id": envelope.id, "message_id": message_id}
 
 
-@app.post("/events/vision", status_code=202)
+@app.post("/events/vision", status_code=202, dependencies=[Depends(enforce_write_policy)])
 async def create_vision_event(
     request: Request,
     image_path: str | None = Form(default=None),
@@ -195,10 +208,18 @@ async def create_vision_event(
 
     resolved_image_path: str | None = image_path
     if image_file is not None:
+        # Never trust the client-supplied filename: it can contain path
+        # traversal (e.g. ../../x). Store under a random name instead, and
+        # only accept common image extensions with a sane size cap.
+        suffix = Path(image_file.filename or "").suffix.lower()
+        if suffix not in {".jpg", ".jpeg", ".png"}:
+            raise HTTPException(status_code=400, detail="Only .jpg/.jpeg/.png uploads are accepted")
         uploads_dir = Path("data/uploads")
         uploads_dir.mkdir(parents=True, exist_ok=True)
-        file_path = uploads_dir / image_file.filename
+        file_path = uploads_dir / f"{uuid.uuid4().hex}{suffix}"
         content = await image_file.read()
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Image too large (max 10 MB)")
         try:
             file_path.write_bytes(content)
         except OSError as exc:
@@ -282,7 +303,7 @@ def get_aggregate_summary(
     return AggregateSummaryResponse(items=items)
 
 
-@app.post("/monitoring/drift/run")
+@app.post("/monitoring/drift/run", dependencies=[Depends(enforce_write_policy)])
 def run_drift_report() -> dict:
     """Trigger Evidently drift analysis and return the path to the report."""
     from safetyops.monitoring.drift import run_drift_analysis
@@ -343,7 +364,7 @@ def get_recent_dlq_messages(limit: int = 50) -> dict:
     return {"messages": messages}
 
 
-@app.post("/reprocess/{message_id}")
+@app.post("/reprocess/{message_id}", dependencies=[Depends(enforce_write_policy)])
 def reprocess_from_dlq(message_id: str) -> dict:
     """Reprocess a message that previously failed and was sent to the DLQ.
 
@@ -397,7 +418,11 @@ def reprocess_from_dlq(message_id: str) -> dict:
     return {"reprocessed_event_id": envelope.id, "new_message_id": new_message_id}
 
 
-@app.post("/copilot/triage", response_model=CopilotTriageResponse)
+@app.post(
+    "/copilot/triage",
+    response_model=CopilotTriageResponse,
+    dependencies=[Depends(enforce_write_policy)],
+)
 def copilot_triage(request_body: CopilotTriageRequest) -> CopilotTriageResponse:
     """Run the Copilot triage workflow for an incident ID or free-text description."""
     if not request_body.incident_id and not (request_body.text and request_body.text.strip()):
