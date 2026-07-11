@@ -221,3 +221,4 @@ models/vision/*.pt
 mlruns/
 mlartifacts/
 .deploy_api_key
+.cloudrun_env.yaml
