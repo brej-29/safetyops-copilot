@@ -386,6 +386,9 @@ Key variables (prefix `SAFETYOPS_`):
 | `SAFETYOPS_LLM_MODEL`           | *(unset)*                                                         | LLM model name (e.g. `llama-3.3-70b-versatile`)  |
 | `SAFETYOPS_OLLAMA_BASE_URL`     | *(unset)*                                                         | Deprecated alias for `SAFETYOPS_LLM_BASE_URL`    |
 | `SAFETYOPS_OLLAMA_MODEL`        | *(unset)*                                                         | Deprecated alias for `SAFETYOPS_LLM_MODEL`       |
+| `SAFETYOPS_API_KEY`             | *(unset)*                                                         | If set, write endpoints require `X-API-Key`      |
+| `SAFETYOPS_RATE_LIMIT_PER_MINUTE` | `0`                                                             | Per-IP write-request limit (0 = disabled)        |
+| `SAFETYOPS_NLP_MODEL_HF_REPO`   | *(unset)*                                                         | HF Hub repo to fetch the NLP model from at startup |
 | `SAFETYOPS_METRICS_NAMESPACE`   | `safetyops`                                                       | Prefix/namespace for Prometheus metrics          |
 
 Update `.env.example` and `.env` if new configuration is introduced.

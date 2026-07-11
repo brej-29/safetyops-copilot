@@ -9,6 +9,9 @@ import pandas as pd
 import streamlit as st
 
 API_BASE_URL = os.getenv("SAFETYOPS_API_BASE_URL", "http://localhost:8000")
+# Forwarded to the API's write endpoints when it is deployed with
+# SAFETYOPS_API_KEY protection enabled.
+API_KEY = os.getenv("SAFETYOPS_API_KEY")
 DEPLOY_MODE = os.getenv("DEPLOY_MODE", os.getenv("SAFETYOPS_DEPLOY_MODE", "local"))
 
 st.set_page_config(page_title="SafetyOps Copilot", layout="wide")
@@ -16,7 +19,8 @@ st.set_page_config(page_title="SafetyOps Copilot", layout="wide")
 
 @st.cache_resource(show_spinner=False)
 def get_http_client() -> httpx.Client:
-    return httpx.Client(base_url=API_BASE_URL, timeout=5.0)
+    headers = {"X-API-Key": API_KEY} if API_KEY else {}
+    return httpx.Client(base_url=API_BASE_URL, timeout=5.0, headers=headers)
 
 
 def _fetch_system_status() -> Dict[str, Any]:

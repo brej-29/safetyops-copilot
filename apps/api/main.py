@@ -13,6 +13,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from apps.api.security import enforce_write_policy
 from safetyops.agents.triage_graph import run_triage_workflow
 from safetyops.core import configure_logging, get_logger, set_correlation_id, settings
 from safetyops.core.exceptions import SafetyOpsError
@@ -170,7 +171,7 @@ def system_status() -> SystemStatusResponse:
     )
 
 
-@app.post("/events/text", status_code=202)
+@app.post("/events/text", status_code=202, dependencies=[Depends(enforce_write_policy)])
 def create_text_event(request: Request, body: TextEventRequest) -> dict:
     """Ingest a text event and publish it to the stream."""
     correlation_id = request.headers.get("X-Correlation-ID")
@@ -188,7 +189,7 @@ def create_text_event(request: Request, body: TextEventRequest) -> dict:
     return {"event_id": envelope.id, "message_id": message_id}
 
 
-@app.post("/events/vision", status_code=202)
+@app.post("/events/vision", status_code=202, dependencies=[Depends(enforce_write_policy)])
 async def create_vision_event(
     request: Request,
     image_path: str | None = Form(default=None),
@@ -286,7 +287,7 @@ def get_aggregate_summary(
     return AggregateSummaryResponse(items=items)
 
 
-@app.post("/monitoring/drift/run")
+@app.post("/monitoring/drift/run", dependencies=[Depends(enforce_write_policy)])
 def run_drift_report() -> dict:
     """Trigger Evidently drift analysis and return the path to the report."""
     from safetyops.monitoring.drift import run_drift_analysis
@@ -347,7 +348,7 @@ def get_recent_dlq_messages(limit: int = 50) -> dict:
     return {"messages": messages}
 
 
-@app.post("/reprocess/{message_id}")
+@app.post("/reprocess/{message_id}", dependencies=[Depends(enforce_write_policy)])
 def reprocess_from_dlq(message_id: str) -> dict:
     """Reprocess a message that previously failed and was sent to the DLQ.
 
@@ -401,7 +402,11 @@ def reprocess_from_dlq(message_id: str) -> dict:
     return {"reprocessed_event_id": envelope.id, "new_message_id": new_message_id}
 
 
-@app.post("/copilot/triage", response_model=CopilotTriageResponse)
+@app.post(
+    "/copilot/triage",
+    response_model=CopilotTriageResponse,
+    dependencies=[Depends(enforce_write_policy)],
+)
 def copilot_triage(request_body: CopilotTriageRequest) -> CopilotTriageResponse:
     """Run the Copilot triage workflow for an incident ID or free-text description."""
     if not request_body.incident_id and not (request_body.text and request_body.text.strip()):

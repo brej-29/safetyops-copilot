@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     ollama_base_url: str | None = None
     ollama_model: str | None = None
 
+    # API protection (both opt-in; see apps/api/security.py)
+    api_key: str | None = None
+    rate_limit_per_minute: int = 0
+
     # Metrics
     metrics_namespace: str = "safetyops"
 
