@@ -1,8 +1,10 @@
 """Upload the fine-tuned NLP model to the Hugging Face Hub.
 
 Usage:
-    export HF_TOKEN=hf_...          # a write-scoped token from hf.co/settings/tokens
     python scripts/upload_nlp_model.py --repo your-user/safetyops-nlp-severity
+
+Auth: uses HF_TOKEN if set, otherwise the token cached by
+`huggingface-cli login` / `hf auth login` (must have write scope).
 
 Uploads the contents of models/nlp (excluding training checkpoints/logs) to a
 model repo, creating it if needed. Deployments then set
@@ -29,9 +31,13 @@ def main() -> None:
     parser.add_argument("--private", action="store_true", help="Create the repo as private")
     args = parser.parse_args()
 
-    token = os.getenv("HF_TOKEN")
+    from huggingface_hub import get_token
+
+    token = os.getenv("HF_TOKEN") or get_token()
     if not token:
-        raise SystemExit("Set HF_TOKEN to a write-scoped Hugging Face token first.")
+        raise SystemExit(
+            "No Hugging Face credentials found. Run `hf auth login` or set HF_TOKEN."
+        )
 
     model_dir = Path(args.model_dir)
     if not (model_dir / "config.json").exists():

@@ -47,8 +47,16 @@ _event_bus = RedisStreamsEventBus()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize DB schema for local dev and ensure consumer group exists."""
-    init_db()
+    """Initialize DB schema and ensure the consumer group exists.
+
+    Both steps are best-effort: the API must still boot when the database or
+    Redis is unreachable (e.g. a cloud deployment before secrets are wired),
+    with the degraded state surfaced via /system/status.
+    """
+    try:
+        init_db()
+    except Exception:
+        logger.exception("Failed to initialize database schema on startup")
     try:
         _event_bus.ensure_consumer_group()
     except SafetyOpsError:
