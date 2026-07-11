@@ -19,3 +19,11 @@ os.environ["SAFETYOPS_DATABASE_URL"] = f"sqlite:///{(_TEST_DB_DIR / 'test.db').a
 # the rule-based classifier and stub PPE predictions.
 os.environ["SAFETYOPS_NLP_MODEL_DIR"] = str(_TEST_DB_DIR / "no-nlp-model")
 os.environ["SAFETYOPS_VISION_MODEL_PATH"] = str(_TEST_DB_DIR / "no-vision-model.pt")
+
+# Never let tests call a real LLM endpoint, even if the developer's .env
+# configures one (nondeterministic output, external quota, network).
+os.environ["SAFETYOPS_LLM_BASE_URL"] = ""
+os.environ["SAFETYOPS_LLM_API_KEY"] = ""
+os.environ["SAFETYOPS_LLM_MODEL"] = ""
+os.environ["SAFETYOPS_OLLAMA_BASE_URL"] = ""
+os.environ["SAFETYOPS_OLLAMA_MODEL"] = ""
