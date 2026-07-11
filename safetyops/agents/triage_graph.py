@@ -207,18 +207,23 @@ Recent related events:
 
 
 def _enhance_with_llm(state: TriageState) -> TriageState:
-    """Optionally rewrite the report using a local LLM (Ollama).
+    """Optionally rewrite the report using an OpenAI-compatible LLM endpoint.
 
-    If no LLM is configured or the call fails, the original report is returned.
+    Works with hosted providers (e.g. Groq with an API key) as well as local
+    Ollama. If no LLM is configured or the call fails, the original report is
+    returned unchanged.
     """
-    base_url = settings.ollama_base_url
-    model = settings.ollama_model
+    base_url = settings.llm_base_url or settings.ollama_base_url
+    model = settings.llm_model or settings.ollama_model
+    api_key = settings.llm_api_key
     report_md = state.get("report_markdown") or ""
     if not base_url or not model or not report_md:
         return state
 
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
     try:
-        client = httpx.Client(base_url=base_url, timeout=10.0)
+        client = httpx.Client(base_url=base_url, headers=headers, timeout=20.0)
         payload = {
             "model": model,
             "messages": [

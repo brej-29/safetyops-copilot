@@ -1,29 +1,36 @@
 stages:
   download_data:
     cmd: |
-      python scripts/download_text_dataset.py
+      python scripts/download_msha_dataset.py
       python scripts/download_vision_dataset.py
     deps:
-      - scripts/download_text_dataset.py
+      - scripts/download_msha_dataset.py
       - scripts/download_vision_dataset.py
     outs:
       - data/text
       - data/vision
 
   train_nlp:
-    cmd: python -m safetyops.ml.nlp.train --data-path data/text/incidents_synthetic.csv --output-dir models/nlp
+    cmd: python -m safetyops.ml.nlp.train --data-path data/text/incidents_msha.csv --output-dir models/nlp
     deps:
-      - data/text/incidents_synthetic.csv
+      - data/text/incidents_msha.csv
       - safetyops/ml/nlp/train.py
     outs:
       - models/nlp
 
   eval_nlp:
-    cmd: python -m safetyops.ml.nlp.train --data-path data/text/incidents_synthetic.csv --output-dir models/nlp --eval-only
+    cmd: python -m safetyops.ml.nlp.evaluate --test-path data/text/incidents_msha_test.csv --model-dir models/nlp
     deps:
-      - data/text/incidents_synthetic.csv
+      - data/text/incidents_msha_test.csv
       - models/nlp
-      - safetyops/ml/nlp/train.py
+      - safetyops/ml/nlp/evaluate.py
+
+  download_vision_model:
+    cmd: python scripts/download_vision_model.py
+    deps:
+      - scripts/download_vision_model.py
+    outs:
+      - models/vision/ppe_yolov8n.pt
 
   train_vision:
     cmd: python -m safetyops.ml.vision.train --data-root data/vision/ppe --output-dir artifacts/vision

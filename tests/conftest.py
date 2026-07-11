@@ -13,3 +13,9 @@ from pathlib import Path
 
 _TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="safetyops-tests-"))
 os.environ["SAFETYOPS_DATABASE_URL"] = f"sqlite:///{(_TEST_DB_DIR / 'test.db').as_posix()}"
+
+# Keep tests deterministic and fast regardless of locally trained/downloaded
+# models: point model paths at nonexistent locations so inference always uses
+# the rule-based classifier and stub PPE predictions.
+os.environ["SAFETYOPS_NLP_MODEL_DIR"] = str(_TEST_DB_DIR / "no-nlp-model")
+os.environ["SAFETYOPS_VISION_MODEL_PATH"] = str(_TEST_DB_DIR / "no-vision-model.pt")

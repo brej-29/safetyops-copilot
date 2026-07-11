@@ -2,73 +2,71 @@
 
 ## Overview
 
-This directory is intended to hold configuration and notes for the YOLOv8 model
-used for **PPE (Personal Protective Equipment) detection** in SafetyOps Copilot.
+This directory holds the PPE detection weights used by SafetyOps Copilot.
 
-By default, the system uses the publicly available:
+The recommended model is a community hard-hat detector:
 
-- Base model: `yolov8n.pt` (Ultralytics YOLOv8 nano)
+- Model: [`keremberke/yolov8n-hard-hat-detection`](https://huggingface.co/keremberke/yolov8n-hard-hat-detection)
+- Architecture: YOLOv8 nano (~6 MB)
+- Classes: `Hardhat`, `NO-Hardhat` (each detection is a worker's head)
+- Training data: the public [hard-hat detection dataset](https://huggingface.co/datasets/keremberke/hard-hat-detection)
+  (~5k construction-site images)
+- Reported by the model author: mAP@0.5 ≈ 0.811 on the dataset's validation split
 
-The model is downloaded automatically by the `ultralytics` library on first use
-and is **not** committed to the repository.
-
-## Task
-
-The YOLOv8 model detects objects such as:
-
-- `person`
-- PPE-related classes (depending on the chosen dataset and training):
-  - `helmet` / `hardhat`
-  - `vest` / `jacket`
-  - Other site-specific PPE classes
-
-The SafetyOps wrapper uses these detections to estimate a **PPE compliance
-score** for each image:
-
-- `num_persons`: number of detected persons.
-- `num_persons_with_ppe`: persons likely wearing required PPE.
-- `compliance_score`: `num_persons_with_ppe / max(num_persons, 1)` clipped to `[0, 1]`.
-
-## Training (optional)
-
-For v1, the default setup relies on pretrained YOLOv8n weights. You can
-optionally fine-tune on a PPE dataset.
-
-Training entry point:
+Download it with:
 
 ```bash
-python -m safetyops.ml.vision.train \
-    --data-root data/vision/ppe \
-    --epochs 10
+python scripts/download_vision_model.py
+# then point the runtime at it:
+export SAFETYOPS_VISION_MODEL_PATH=models/vision/ppe_yolov8n.pt
 ```
 
-This script is designed for use in a **GPU environment** (e.g. Google Colab).
-See:
+Weights are **not** committed to the repository.
 
-- `docs/vision_colab.md` for a Colab-oriented walkthrough.
-- `scripts/download_vision_dataset.py` for guidance on preparing a YOLO-format
-  PPE dataset.
+## Task and compliance scoring
 
-## Inference
+The runtime wrapper (`safetyops.ml.vision.infer.run_ppe_inference`) supports
+three label schemes and derives a PPE compliance estimate from whichever the
+loaded weights provide:
 
-The runtime wrapper is:
+1. **Hard-hat head detectors** (recommended, e.g. the model above):
+   - `num_persons` = detected heads (`Hardhat` + `NO-Hardhat`)
+   - `num_persons_with_ppe` = `Hardhat` detections
+2. **Person + equipment detectors** (custom fine-tunes with separate
+   `person`, `helmet`/`hardhat`, `vest` classes):
+   - compliance approximates one PPE item per detected person
+3. **Person-only models** (COCO `yolov8n.pt`): persons are counted but PPE
+   cannot be assessed, so `compliance_score` stays neutral at `0.5`.
 
-- `safetyops.ml.vision.infer.run_ppe_inference(image_path: str | None)`
+In all cases: `compliance_score = num_persons_with_ppe / max(num_persons, 1)`,
+clipped to `[0, 1]`. The worker maps compliance to severity
+(`>= 0.8 low`, `>= 0.5 medium`, otherwise `high`).
 
-Behavior:
+## Fine-tuning (optional)
 
-- Lazily imports `ultralytics.YOLO`.
-- Loads the weights configured via `SAFETYOPS_VISION_MODEL_PATH` (defaults to
-  `yolov8n.pt`).
-- Returns a `VisionPPEDetection` object with PPE compliance scores.
-- If `ultralytics` or weights are unavailable, falls back to a deterministic
-  stub so that tests and constrained environments still work.
+To fine-tune YOLOv8 on your own PPE dataset (GPU recommended, e.g. Colab):
+
+```bash
+python -m safetyops.ml.vision.train --data-root data/vision/ppe --epochs 10
+```
+
+See `docs/vision_colab.md` and `scripts/download_vision_dataset.py`.
+
+## Fallback behavior
+
+- `ultralytics` missing, weights missing, or load failure → deterministic stub
+  prediction (`compliance_score=0.5`), logged once (failed loads are cached).
+- Missing image path → stub prediction.
+
+Aggregation logic is unit-tested in `tests/test_vision_aggregation.py`.
 
 ## Limitations
 
-- Pretrained YOLOv8n is **not** specialized for your site; it is a general
-  object detector.
-- PPE label coverage depends entirely on the dataset you choose for fine-tuning.
+- The hard-hat model detects **hard hats only** — vests, goggles, and other
+  PPE are not assessed.
+- Trained on construction-site imagery; expect degraded accuracy in other
+  domains (e.g. labs, warehouses) and on unusual viewpoints.
+- Head-count is a proxy for person-count; occluded workers may be missed.
 - Image-based assessments must always be supplemented with human review and
   site-specific policies.
 

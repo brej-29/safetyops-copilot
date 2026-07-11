@@ -254,6 +254,85 @@ Future changes that materially alter behavior or architecture should **append** 
 
 ---
 
+## ADR-0014: Per-Service Requirements Files
+
+- **Status**: Accepted
+- **Context**:
+  - A single `requirements.txt` forced every environment (CI, UI-only deploys)
+    to install torch/ultralytics/transformers (~2+ GB), which breaks free-tier
+    deployments and slows CI.
+- **Decision**:
+  - Split dependencies into `requirements/{base,api,worker,ui,ml}.txt`.
+  - `ml.txt` is optional; NLP and vision inference lazily import their heavy
+    dependencies and fall back to the rule-based classifier / stub predictions.
+  - `requirements-dev.txt` installs all services without `ml.txt`.
+- **Consequences**:
+  - CI runs torch-free; deployments install only what each service needs.
+  - Real model inference requires an explicit `pip install -r requirements/ml.txt`.
+
+---
+
+## ADR-0015: Real Training Data from MSHA Accident Narratives
+
+- **Status**: Accepted
+- **Context**:
+  - The NLP severity model was trained on synthetic data, which undermines the
+    credibility of reported metrics.
+  - OSHA Severe Injury Reports contain real narratives but, by definition,
+    only severe outcomes — there is no "low" class.
+  - MSHA open data (accidents since 2000) has ~273k narratives with a
+    DEGREE_INJURY outcome spanning the full severity spectrum.
+- **Decision**:
+  - Derive labels from `DEGREE_INJURY_CD`: fatality/permanent disability →
+    `high`; lost or restricted workdays → `medium`; no lost time → `low`.
+    Ambiguous codes (illness, natural causes, non-employees) are excluded.
+  - Balance-sample to the smallest class and hold out a stratified test set
+    (`scripts/download_msha_dataset.py`).
+  - Evaluate the fine-tuned model against the rule-based baseline on the
+    held-out set (`safetyops/ml/nlp/evaluate.py`).
+- **Consequences**:
+  - Metrics are real and reproducible; the baseline comparison is honest.
+  - The training domain is mining; transfer to other industries is a
+    documented limitation in the model card.
+
+---
+
+## ADR-0016: OpenAI-Compatible LLM Endpoint for Copilot Enhancement
+
+- **Status**: Accepted
+- **Context**:
+  - Report enhancement only supported local Ollama, which cannot run on
+    free-tier cloud deployments.
+- **Decision**:
+  - Configure via `SAFETYOPS_LLM_BASE_URL`, `SAFETYOPS_LLM_API_KEY`,
+    `SAFETYOPS_LLM_MODEL`; POST to `{base_url}/v1/chat/completions`.
+  - Works with Groq (free tier), OpenAI, or local Ollama; `ollama_*` settings
+    remain as deprecated aliases.
+- **Consequences**:
+  - Deployed demos get genuinely LLM-written incident briefs at no cost.
+  - Failures still degrade gracefully to the template-based report.
+
+---
+
+## ADR-0017: Community Hard-Hat Weights for PPE Detection
+
+- **Status**: Accepted
+- **Context**:
+  - COCO `yolov8n.pt` has no PPE classes, so compliance scoring was
+    effectively fake (helmets could never be detected). Fine-tuning requires a
+    GPU, which is out of scope for local-first setup.
+- **Decision**:
+  - Use `keremberke/yolov8n-hard-hat-detection` (labels `Hardhat` /
+    `NO-Hardhat`) fetched by `scripts/download_vision_model.py`.
+  - The inference wrapper supports three label schemes (hard-hat heads,
+    person+equipment, person-only) and reports neutral compliance when the
+    loaded weights cannot see PPE.
+- **Consequences**:
+  - Vision demos produce real PPE compliance scores out of the box.
+  - Hard hats only; other PPE types remain future fine-tuning work.
+
+---
+
 ## How to add a new decision
 
 1. Increment the ADR ID (e.g., `ADR-0014`).

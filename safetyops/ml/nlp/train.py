@@ -25,7 +25,7 @@ from safetyops.core.settings import settings
 logger = get_logger(__name__)
 
 
-DATA_PATH_DEFAULT = Path("data/text/incidents_synthetic.csv")
+DATA_PATH_DEFAULT = Path("data/text/incidents_msha.csv")
 MODEL_NAME = "distilbert-base-uncased"
 LABELS = ["low", "medium", "high"]
 LABEL2ID = {label: i for i, label in enumerate(LABELS)}
@@ -71,7 +71,7 @@ def load_dataset(path: Path) -> List[IncidentRecord]:
     if not path.exists():
         raise FileNotFoundError(
             f"Dataset not found at {path}. "
-            "Run `python scripts/download_text_dataset.py` first."
+            "Run `python scripts/download_msha_dataset.py` first."
         )
 
     records: List[IncidentRecord] = []
@@ -126,7 +126,7 @@ def compute_metrics(eval_pred: Tuple[np.ndarray, np.ndarray]) -> Dict[str, float
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Fine-tune DistilBERT on synthetic incident severity data.",
+        description="Fine-tune DistilBERT on incident severity data (MSHA narratives by default).",
     )
     parser.add_argument(
         "--data-path",
@@ -193,32 +193,49 @@ def main() -> None:
 
     num_labels = len(LABELS)
 
+    # In eval-only mode, evaluate the previously fine-tuned model rather than
+    # the base pretrained checkpoint.
+    model_source = MODEL_NAME
+    if args.eval_only and (output_dir / "config.json").exists():
+        model_source = str(output_dir)
+
     logger.info(
         "Initializing model",
-        extra={"model_name": MODEL_NAME, "num_labels": num_labels},
+        extra={"model_name": model_source, "num_labels": num_labels},
     )
     model = AutoModelForSequenceClassification.from_pretrained(
-        MODEL_NAME,
+        model_source,
         num_labels=num_labels,
         id2label=ID2LABEL,
         label2id=LABEL2ID,
     )
 
-    training_args = TrainingArguments(
+    training_kwargs = dict(
         output_dir=str(output_dir / "hf_runs"),
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,
         learning_rate=args.learning_rate,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="f1_macro",
         logging_dir=str(output_dir / "logs"),
         seed=args.seed,
     )
+    # Keep compatibility across transformers versions: rename or drop kwargs
+    # that the installed TrainingArguments does not accept.
+    import inspect
 
-    mlflow.set_tracking_uri(settings.mlflow_tracking_uri or "file:mlruns")
+    supported = set(inspect.signature(TrainingArguments.__init__).parameters)
+    if "eval_strategy" not in supported and "evaluation_strategy" in supported:
+        training_kwargs["evaluation_strategy"] = training_kwargs.pop("eval_strategy")
+    training_kwargs = {k: v for k, v in training_kwargs.items() if k in supported}
+
+    training_args = TrainingArguments(**training_kwargs)
+
+    # MLflow >= 3.14 requires a database backend; sqlite keeps it local-first.
+    mlflow.set_tracking_uri(settings.mlflow_tracking_uri or "sqlite:///mlflow.db")
     mlflow.set_experiment("safetyops_nlp_severity")
 
     with mlflow.start_run():

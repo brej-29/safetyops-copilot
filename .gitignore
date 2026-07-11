@@ -212,3 +212,11 @@ data/text/
 data/vision/
 data/uploads/
 *.db
+
+# Model binaries (download/train locally; cards and eval results stay tracked)
+models/nlp/*
+!models/nlp/MODEL_CARD.md
+!models/nlp/eval_results.json
+models/vision/*.pt
+mlruns/
+mlartifacts/

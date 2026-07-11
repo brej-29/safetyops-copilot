@@ -6,6 +6,9 @@ from safetyops.agents.triage_graph import run_triage_workflow
 def test_triage_graph_deterministic_without_llm(monkeypatch) -> None:
     # Disable any LLM calls to keep the path deterministic in tests.
     class DummySettings:
+        llm_base_url = None
+        llm_api_key = None
+        llm_model = None
         ollama_base_url = None
         ollama_model = None
 
