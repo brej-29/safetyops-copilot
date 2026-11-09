@@ -124,7 +124,7 @@ and provenance. Legacy ingestion/MCP inference can still load the model on deman
 
 ## Verified current release
 
-2026-11-09: revision `safetyops-api-00008-feq` serves 100% of the primary URL.
+2026-11-09: revision `safetyops-api-00010-tag` serves 100% of the primary URL.
 The tagged revision passed the complete browser workflow before promotion, and
 main public pages plus private-cookie creation were rechecked afterward.
-Rollback target: `safetyops-api-00005-xxx`. See HANDOFF.md for the acceptance record.
+Rollback target: `safetyops-api-00008-feq`. See HANDOFF.md for the acceptance record.

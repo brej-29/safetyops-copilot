@@ -368,3 +368,17 @@ are ready for a portfolio or post, with their provenance recorded alongside.
   full browser workflow) for source commit `21d998b2a2fadaaa90189811d967b4d76f93eda1`:
   https://github.com/brej-29/safetyops-copilot/actions/runs/42555287092
   The final follow-up commit records this evidence only; runtime source is unchanged.
+
+
+## Search Console tag deployment ? 2026-11-09
+
+The user-supplied google-site-verification meta tag is installed once inside the
+public homepage head and retained by scripts/build_web.py. Source commit:
+`f0e6e27a4412e1c06d386495cf6e69b76528ff59`. Both remote CI jobs passed:
+https://github.com/brej-29/safetyops-copilot/actions/runs/42558594290
+
+Revision `safetyops-api-00010-tag` now serves 100% of main traffic. The exact token
+was verified in both the tagged revision and public homepage HTTP 200 responses.
+Rollback revision: `safetyops-api-00008-feq`. Google account ownership verification
+is not claimed; the owner can now click Verify in Search Console and submit the
+sitemap.

@@ -1,4 +1,4 @@
-﻿# Search and AI discoverability
+# Search and AI discoverability
 
 ## Implemented
 
@@ -21,14 +21,16 @@ add redirects from the previous origin and resubmit the new sitemap.
 
 ## Owner follow-up
 
-1. Verify the deployed origin in Google Search Console (or a custom domain using
-   DNS verification), then submit `/sitemap.xml`.
+1. The homepage includes the supplied Google site-verification meta tag. Finish
+   ownership verification in Google Search Console, then submit `/sitemap.xml`.
+   A future custom domain may require its own verification.
 2. Inspect homepage and guide URLs for crawl/index status after deployment.
 3. Connect the public GitHub repository homepage and relevant topics.
 4. Publish an honest project walkthrough linking to the website and source.
 5. Gather actual user feedback before claiming adoption, retention or time savings.
 
-Search Console account access/verification is not configured by this repository.
+The verification tag is retained by `scripts/build_web.py` during page regeneration.
+Search Console account actions must still be completed in the owner's account.
 No search-engine submission or ranking is claimed unless separately recorded.
 
 ## What this does not promise
