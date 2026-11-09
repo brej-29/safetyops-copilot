@@ -22,10 +22,38 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          pip install -r requirements-dev.txt -r requirements/mcp.txt
 
       - name: Lint with ruff
         run: ruff check .
 
       - name: Run tests
         run: pytest
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: pip install -r requirements/api.txt
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Start isolated website
+        run: |
+          mkdir -p artifacts
+          SAFETYOPS_DATABASE_URL=sqlite:///./artifacts/ci.db SAFETYOPS_REDIS_URL=redis://127.0.0.1:6379 uvicorn apps.api.main:app --host 127.0.0.1 --port 8010 > artifacts/web.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8010/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8010/health
+      - run: npm run test:web
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-debug
+          path: |
+            .impeccable/review/
+            artifacts/web.log

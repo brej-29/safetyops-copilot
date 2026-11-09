@@ -1,3 +1,5 @@
+> Current release (2026-11-09): FastAPI also serves the public website and personal SQL workspace. Workspace observation/action records are isolated by a hashed browser credential and do not depend on Redis. Local MCP tools share assessment/runbook logic. See HANDOFF.md and docs/DEPLOYMENT.md for the current architecture and runtime status. The original pipeline architecture below remains as foundation reference.
+
 # Architecture — SafetyOps Copilot (v1)
 
 This document describes the high-level architecture of SafetyOps Copilot, focusing on **components**, **data flow**, and **runtime topology**.

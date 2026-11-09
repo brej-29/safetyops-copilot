@@ -1,3 +1,5 @@
+> Current release (2026-11-09): new primary components live in apps/web, apps/api/workspace.py, safetyops/db/workspace.py, safetyops/domain/assessment.py and services/mcp. HANDOFF.md provides the current file map. The descriptions below cover the original pipeline.
+
 # Components — SafetyOps Copilot
 
 This document zooms into each major component and how it should be used and extended.

@@ -343,3 +343,19 @@ Future changes that materially alter behavior or architecture should **append** 
    - Consequences
 3. Keep the description **concise but explicit**.
 4. Reference the change in relevant code comments or READMEs if needed.
+## ADR-0018: Persistent coordinator workspace alongside the stream
+
+- Status: Accepted, 2026-11-09.
+- Context: A prediction-focused demo lacked ownership and next-shift continuity;
+  the previous external Redis service was also unavailable during verification.
+- Decision: Serve the public website and personal workspace through FastAPI.
+  Store observations and corrective actions in additive SQL tables, scoped by
+  a random browser credential whose digest is stored server-side. Keep the
+  workspace independent of the optional Redis pipeline. Add explicit assessment
+  provenance, versioned priority arithmetic, evidence-gated closure and optimistic
+  revision checks. Provide Markdown/CSV/JSON exports and local read-only MCP tools.
+- Consequences: The recurring workflow works without Redis and no client-side
+  deployment secret is needed. Browser-linked access has no account recovery,
+  team roles or cross-device transfer. Exports do not provide automatic restore.
+  Scores from this versioned workspace policy differ from the legacy LangGraph
+  policy. Historical model evaluation is preserved, not represented as new training.

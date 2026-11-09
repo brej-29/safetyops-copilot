@@ -1,0 +1,18 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.web-patch
+      - --build-arg
+      - BASE_IMAGE=${_BASE_IMAGE}
+      - -t
+      - ${_IMAGE}
+      - .
+images:
+  - ${_IMAGE}
+substitutions:
+  _BASE_IMAGE: asia-southeast1-docker.pkg.dev/safetyops-copilot/cloud-run-source-deploy/safetyops-api@sha256:922a1f6a5eefbb621f90dbbf24484fa83760b325cd6d645e2f007a953e836555
+  _IMAGE: asia-southeast1-docker.pkg.dev/safetyops-copilot/cloud-run-source-deploy/safetyops-api:workspace-v02-warm
+options:
+  logging: CLOUD_LOGGING_ONLY

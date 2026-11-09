@@ -9,6 +9,7 @@ class TextClassificationPrediction(BaseModel):
     category: str
     severity: Literal["low", "medium", "high"]
     confidence: float
+    model_source: str = "rules"
 
 
 class VisionPPEDetection(BaseModel):

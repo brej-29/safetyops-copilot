@@ -222,3 +222,8 @@ mlruns/
 mlartifacts/
 .deploy_api_key
 .cloudrun_env.yaml
+node_modules/
+.impeccable/review/
+.playwright/
+test-results/
+playwright-report/

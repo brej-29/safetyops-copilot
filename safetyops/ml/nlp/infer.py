@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 from typing import Any, Optional
 
 from safetyops.core.logging import get_logger
@@ -14,6 +15,8 @@ logger = get_logger(__name__)
 _MODEL = None
 _TOKENIZER = None
 _LOAD_FAILED = False
+_LOAD_LOCK = threading.Lock()
+_WARMUP_STARTED = False
 _LABELS = ["low", "medium", "high"]
 
 
@@ -21,7 +24,21 @@ def _get_model_dir() -> Path:
     return Path(settings.nlp_model_dir)
 
 
+def warm_model_in_background() -> None:
+    """Warm optional artifacts without delaying website readiness or first saves."""
+    global _WARMUP_STARTED
+    if _WARMUP_STARTED or not (_get_model_dir() / "config.json").is_file():
+        return
+    _WARMUP_STARTED = True
+    threading.Thread(target=_load_model, name="nlp-warmup", daemon=True).start()
+
+
 def _load_model() -> tuple[Optional[Any], Optional[Any]]:
+    with _LOAD_LOCK:
+        return _load_model_unlocked()
+
+
+def _load_model_unlocked() -> tuple[Optional[Any], Optional[Any]]:
     """Lazily load the fine-tuned DistilBERT model, if available.
 
     torch/transformers are imported lazily so that slim installations
@@ -34,6 +51,12 @@ def _load_model() -> tuple[Optional[Any], Optional[Any]]:
     if _MODEL is not None and _TOKENIZER is not None:
         return _MODEL, _TOKENIZER
     if _LOAD_FAILED:
+        return None, None
+
+    model_dir = _get_model_dir()
+    if not (model_dir / "config.json").is_file():
+        logger.info("NLP model config missing; using rule-based classifier")
+        _LOAD_FAILED = True
         return None, None
 
     try:
@@ -71,7 +94,9 @@ def _load_model() -> tuple[Optional[Any], Optional[Any]]:
     return _MODEL, _TOKENIZER
 
 
-def predict_severity(text: str) -> TextClassificationPrediction:
+def predict_severity(
+    text: str, *, allow_model_loading: bool = True
+) -> TextClassificationPrediction:
     """Predict incident category and severity for the given text.
 
     - If a fine-tuned DistilBERT model is available, use it for severity.
@@ -79,6 +104,8 @@ def predict_severity(text: str) -> TextClassificationPrediction:
     - If the model is unavailable, fall back entirely to the rule-based
       implementation.
     """
+    if not allow_model_loading and (_MODEL is None or _TOKENIZER is None):
+        return rule_based_classify(text)
     model, tokenizer = _load_model()
     if model is None or tokenizer is None:
         return rule_based_classify(text)
@@ -113,4 +140,5 @@ def predict_severity(text: str) -> TextClassificationPrediction:
         category=baseline.category,
         severity=severity,
         confidence=confidence,
+        model_source="distilbert",
     )

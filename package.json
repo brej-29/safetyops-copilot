@@ -1,0 +1,11 @@
+{
+  "name": "safetyops-web-checks",
+  "private": true,
+  "scripts": {
+    "test:web": "node tests/web/workspace.spec.cjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "prettier": "^3.9.10"
+  }
+}

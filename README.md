@@ -1,551 +1,183 @@
-<div align="center">
-  <h1>🦺 safetyops-copilot</h1>
-  <p><i>Production-style safety-incident pipeline with a LangGraph triage Copilot,
-  a DistilBERT severity model fine-tuned on 273k real accident reports, and
-  YOLOv8 PPE detection — deployed live on free-tier cloud infrastructure.</i></p>
-</div>
+# SafetyOps Copilot
 
-<br>
+**Small signals. Safer next shifts.**
 
-<div align="center">
-  <img alt="Language" src="https://img.shields.io/badge/Language-Python-blue">
-  <img alt="Backend" src="https://img.shields.io/badge/Backend-FastAPI-009688">
-  <img alt="Streaming" src="https://img.shields.io/badge/Streaming-Redis%20Streams-DC382D">
-  <img alt="Database" src="https://img.shields.io/badge/Database-PostgreSQL-336791">
-  <img alt="ML" src="https://img.shields.io/badge/ML-DistilBERT%20%7C%20YOLOv8-ff9800">
-  <img alt="Agent" src="https://img.shields.io/badge/Agent-LangGraph-1C3C3C">
-  <img alt="Frontend" src="https://img.shields.io/badge/Frontend-Streamlit-ff4b4b">
-  <img alt="Tests" src="https://img.shields.io/badge/Tests-36%20passing-brightgreen">
-  <img alt="License" src="https://img.shields.io/badge/License-MIT-black">
-</div>
+An open-source safety workspace that turns an observation into an explainable
+assessment, an owned corrective action, and a useful shift handover. Built for
+individual safety coordinators, backed by a real database.
 
-<br>
+[**Open the live website →**](https://safetyops-api-a5afr3rcdq-as.a.run.app/)
+· [Try the sample workspace](https://safetyops-api-a5afr3rcdq-as.a.run.app/app#demo)
+· [How assessment works](https://safetyops-api-a5afr3rcdq-as.a.run.app/guides/incident-triage)
+· [Project handoff & portfolio kit](HANDOFF.md)
 
-**🚀 [Live demo](https://safetyops-copilot.streamlit.app/)** — try it with sample incident reports and site photos, no setup required.
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-typed_API-009688?logo=fastapi&logoColor=white)
+![MCP](https://img.shields.io/badge/MCP-read--only_tools-214FE0)
+![CI](https://github.com/brej-29/safetyops-copilot/actions/workflows/ci.yml/badge.svg)
+![License](https://img.shields.io/github/license/brej-29/safetyops-copilot)
 
-A production-style **SafetyOps Copilot** for monitoring safety incidents from:
+![SafetyOps Copilot public website](apps/web/social.png)
 
-- **Vision events**: PPE compliance checks (person + hardhat/vest) via YOLO inference.
-- **Text events**: free-text incident reports categorized and severity-scored.
+[Full-page capture](docs/media/homepage.png) ? [Desktop workspace](docs/media/workspace.png)
+? [Mobile workspace](docs/media/workspace-mobile.png)
 
-The system is designed to be:
+## A workflow worth returning to
 
-- **Local-first, free-first** – runs on a laptop with Docker and CPU-only dependencies, and deploys entirely on free cloud tiers (Cloud Run, Neon, Upstash, Streamlit Cloud).
-- **Production-shaped** – clear separation between API, worker, UI, and infra; event-driven with retries, a dead-letter queue, and idempotent processing.
-- **Honestly evaluated** – the severity model is trained and tested on real public accident data, with baseline comparisons and documented limitations, not synthetic demo metrics.
+A prediction is useful only when someone acts on it. SafetyOps keeps the next
+step beside the original observation:
 
----
+1. **Capture** what happened and where.
+2. **Review** severity, inference source, score arithmetic and response references.
+3. **Assign** a corrective action, owner and due date.
+4. **Return** to open and overdue actions each shift.
+5. **Close with evidence**, then export a Markdown handover, action CSV or JSON archive.
 
-## High-level Architecture
+![Actual browser walkthrough of the synthetic workspace](docs/media/workspace-tour.gif)
+
+[Watch the WebM recording](docs/media/workspace-tour.webm). All media show explicitly
+synthetic records; they are captures of the implemented product, not mockups.
+
+The personal workspace is isolated from the public sample and legacy streaming
+feed. Records persist in SQL storage. A random HttpOnly browser cookie is the
+access key; only its SHA-256 digest is stored. Clearing cookies loses access.
+There is no email login, recovery, team sharing or archive restore in this release.
+
+## Inside the system
 
 ```mermaid
 flowchart LR
-    subgraph Ingestion
-        UI[Streamlit UI<br/>apps/ui]
-        API[FastAPI API<br/>apps/api]
-    end
-
-    subgraph Streaming
-        RS[(Redis Streams)]
-    end
-
-    subgraph Processing
-        W[Worker Service<br/>services/worker]
-        MLVision[YOLO PPE Wrapper<br/>safetyops/ml/vision]
-        MLText[NLP Severity Model<br/>safetyops/ml/nlp]
-        Agent[Copilot Triage Workflow<br/>safetyops/agents]
-    end
-
-    subgraph Storage
-        PG[(Postgres)]
-    end
-
-    subgraph Monitoring
-        Prom[Prometheus]
-        Graf[Grafana]
-        MLflow[MLflow Server]
-    end
-
-    UI -- HTTP --> API
-    API -- publish events --> RS
-    W -- consume events --> RS
-    W -- raw + enriched events --> PG
-    W -- aggregates --> PG
-
-    API -- read --> PG
-    UI -- HTTP --> API
-    API -- /copilot/triage --> Agent
-
-    API -- /metrics --> Prom
-    W -- worker metrics --> Prom
-    Prom -- dashboards --> Graf
-
-    W -- training logs --> MLflow
+    Person[Safety coordinator] --> Web[Crawlable website + workspace]
+    Web --> Workspace[Same-origin workspace API]
+    Workspace --> Assessment[Severity inference + explicit safety floor]
+    Workspace --> SQL[(Postgres / SQLite)]
+    SQL --> Actions[Owners · due dates · closure history]
+    Actions --> Export[Markdown · CSV · JSON handover]
+    Assessment --> Explain[Inference source + priority arithmetic]
+    Agent[MCP-compatible local agent] --> MCP[Read-only MCP tools]
+    MCP --> Assessment
+    MCP --> Runbooks[Local response runbooks]
+    Legacy[Legacy ingestion API] --> Redis[(Redis Streams)]
+    Redis --> Worker[Worker: DistilBERT / YOLO]
+    Worker --> SQL
+    Worker --> Metrics[Prometheus · drift · MLflow]
 ```
 
----
+The primary website uses semantic HTML, CSS and a small vanilla JavaScript client,
+served by FastAPI. Public pages are indexable without executing JavaScript.
+Workspace records and controls are excluded from indexing. No Node build is
+required in production.
 
-## Repo Map
+The existing Streamlit console, LangGraph triage, ML training, PPE inference,
+Redis consumer groups, retries/DLQ and monitoring remain in the repository.
+**Operational distinction:** the old production Redis connection was unavailable
+at this upgrade's infrastructure check. The new workspace uses SQL directly and
+does not depend on it. See [deployment notes](docs/DEPLOYMENT.md).
 
-Core layout (created for v1):
+## Explainable assessment
 
-- `context/`
-  - `00_GOAL.md` – goal, scope, non-goals.
-  - `01_ARCHITECTURE.md` – components, dataflow, diagrams.
-  - `02_COMPONENTS.md` – detailed component descriptions.
-  - `03_DECISIONS_LOG.md` – ADR-style decisions log.
-  - `04_COSINE_WORKFLOW.md` – how to ground future AI tasks.
-  - `05_ROADMAP.md` – roadmap for Prompt 1 and beyond.
-- `apps/`
-  - `api/` – FastAPI app (ingestion, health, metrics, queries).
-  - `ui/` – Streamlit UI (live feed, triage, dashboard).
-- `services/`
-  - `worker/` – stream consumer, inference, persistence, aggregates.
-- `safetyops/`
-  - `core/` – logging, settings, exceptions.
-  - `domain/` – Pydantic models for events, predictions, API schemas.
-  - `ml/`
-    - `vision/` – YOLO PPE inference wrapper and optional training.
-    - `nlp/` – rule-based classifier plus DistilBERT fine-tuning and inference.
-  - `streaming/` – Redis Streams event bus abstraction.
-  - `db/` – SQLAlchemy models, engine/session, migrations scaffold.
-  - `monitoring/` – Prometheus metrics helpers and Evidently drift reporting.
-  - `agents/` – multi-step triage workflow (Copilot).
-  - `runbooks/` – markdown incident playbooks used by the triage agent.
-- `data/`
-  - `sample/` – tiny synthetic sample inputs (text, vision placeholders).
-- `notebooks/`
-  - `00_text_eda.ipynb` – incident text EDA and modeling plan.
-  - `01_vision_eda.ipynb` – PPE detection EDA and evaluation plan.
-  - `02_end_to_end_walkthrough.ipynb` – system walkthrough and usage.
-- `scripts/`
-  - `dev_run_local.sh` – helper to spin up local infra.
-  - `seed_demo_data.py` – seed database with demo events/aggregates.
-  - `produce_demo_events.py` – generate demo events into the stream/API.
-- `infra/`
-  - `docker-compose.local.yml` – local infra stack.
-  - `prometheus/prometheus.yml` – scrape config.
-  - `grafana/` – placeholders for dashboards.
-- `.github/workflows/ci.yml` – CI pipeline (ruff + pytest).
-- `.env.example` – example environment configuration.
-- `requirements/` – per-service dependency files:
-  - `base.txt` – shared runtime deps for the `safetyops` package.
-  - `api.txt`, `worker.txt`, `ui.txt` – slim installs per service.
-  - `ml.txt` – heavy ML deps (torch, transformers, ultralytics, mlflow); optional — inference falls back to rule-based/stub predictions without it.
-- `requirements.txt` – full install (all of the above); `requirements-dev.txt` – all services (no heavy ML) plus pytest/ruff/fakeredis.
-- `Makefile` – common commands.
+Optional model artifacts warm in the background. A first save can use the labeled
+rule fallback while the model loads; subsequent observations use the ready model.
+Saved assessments remain snapshots and are not silently rescored.
 
----
+Each saved observation includes its source (`distilbert` or `rules`), category,
+severity, rule version, rationale, runbook reference and the score breakdown.
 
-## Getting Started
+```mermaid
+flowchart TD
+    Text[Observation text] --> Model{Local trained model available?}
+    Model -->|Yes| Learned[DistilBERT severity]
+    Model -->|No / inference failure| Rules[Rule-based severity]
+    Learned --> Floor[Explicit high-harm keyword floor]
+    Rules --> Floor
+    Floor --> Base[Low 25 · Medium 55 · High 85]
+    Base --> Repeat[+3 per related observation in preceding 7 days · cap +15]
+    Repeat --> Review[Human review → assign corrective action]
+```
 
-For a full, step-by-step local run manual (with copy-paste commands for macOS, Linux, and Windows), see:
+Priority is a heuristic for ordering work, **not an accident probability**. Category
+matching and the high-harm floor are lexical and can misunderstand context or
+negation. A low score never establishes that a workplace is safe.
 
-- `context/06_LOCAL_RUN_GUIDE.md`
+### Historical model evidence
 
-A detailed free-tier deployment guide lives in:
+These are the existing checked-in evaluation results, not a claim that this UI
+upgrade retrained the model:
 
-- `context/07_FREE_DEPLOY_GUIDE.md`
+| MSHA held-out evaluation (1,605 narratives) | Accuracy | Macro-F1 | High-severity recall |
+| --- | ---: | ---: | ---: |
+| Rule baseline | 0.3988 | 0.3357 | 0.1607 |
+| Fine-tuned DistilBERT | 0.7807 | 0.7799 | 0.8766 |
 
-Below is a concise quickstart.
+The source corpus contains approximately 273k usable narratives. The balanced
+training pool contains **9,105 rows**, with a separate 1,605-row test set; the model
+was not trained on all 273k records. Mining-domain transfer remains unvalidated.
+[Model card](models/nlp/MODEL_CARD.md) · [Exact results](models/nlp/eval_results.json)
+· [Vision model card](models/vision/MODEL_CARD.md)
 
-### Quickstart (Local)
+## Run the website locally
 
-#### 1. Prerequisites
-
-- Python **3.10–3.12** (3.11 recommended; heavy ML deps are not yet reliable on 3.13+)
-- Docker and Docker Compose
-- `make` (optional but convenient)
-
-#### 2. Setup environment
+Python 3.11 is recommended. Install the service/test dependencies; heavy ML
+packages are optional.
 
 ```bash
-# Clone the repo and cd into it
-git clone <your-fork-or-origin> safetyops-copilot
-cd safetyops-copilot
-
-# Create a virtual environment (recommended)
 python -m venv .venv
-source .venv/bin/activate  # on Windows: .venv\Scripts\activate
-
-# Install dependencies
-make install  # or: python -m pip install --upgrade pip && pip install -r requirements-dev.txt
-
-# Copy example env and adjust values if needed
-cp .env.example .env
+# Activate .venv for your shell, then:
+pip install -r requirements-dev.txt
 ```
 
-By default, the app expects local Postgres and Redis as defined in `infra/docker-compose.local.yml`. For a Docker-free demo you can instead set `SAFETYOPS_DATABASE_URL=sqlite:///./safetyops.db` in `.env`.
-
-#### 3. Start local infra (Postgres, Redis, MLflow, Prometheus, Grafana)
+Set `SAFETYOPS_DATABASE_URL=sqlite:///./safetyops.db` in your local environment
+(or `.env`; see [.env.example](.env.example)). Then run:
 
 ```bash
-make up
-# or directly:
-# docker compose -f infra/docker-compose.local.yml up -d
+uvicorn apps.api.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-This brings up:
-
-- Postgres on `localhost:5432`
-- Redis on `localhost:6379`
-- MLflow on `localhost:5000`
-- Prometheus on `localhost:9090`
-- Grafana on `localhost:3000`
-
-#### 4. Run services locally
-
-In **three separate terminals** (with the venv activated):
-
-**API (FastAPI + Uvicorn)**
+Open [localhost:8000](http://localhost:8000). The personal workspace needs SQL
+only. Redis startup errors are logged when the optional streaming infrastructure
+is absent; they do not stop the website. For the full stack:
 
 ```bash
-make api
-# or:
-uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-**Worker**
-
-```bash
-make worker
-# or:
+docker compose -f infra/docker-compose.local.yml up -d
 python -m services.worker.run
+# Optional legacy console, in another terminal:
+streamlit run apps/ui/main.py
 ```
 
-**UI (Streamlit)**
+To use trained models, install `requirements/ml.txt`, then follow the model cards
+and download scripts. Missing models remain explicitly labeled fallbacks.
+
+## Use it from an agent
 
 ```bash
-make ui
-# or:
-streamlit run apps/ui/main.py --server.port 8501
+pip install -r requirements/mcp.txt
+python -m services.mcp.server
 ```
 
-You should now have:
+The optional official-SDK MCP server runs locally over stdio. It exposes
+`assess_incident`, `get_response_runbook`, and `summarize_handover`. Tools are
+read-only, consume explicitly supplied data and cannot access browser credentials
+or modify personal workspaces. [Setup and client configuration](docs/MCP.md).
 
-- API at `http://localhost:8000`
-- OpenAPI docs at `http://localhost:8000/docs`
-- UI at `http://localhost:8501`
-- Prometheus scraping `http://localhost:8000/metrics`
-- MLflow at `http://localhost:5000`
-- Grafana at `http://localhost:3000`
-
----
-
-## API Overview
-
-Key endpoints (FastAPI):
-
-- `GET /health`
-  - Returns `{ "status": "ok", "version": <app_version> }`.
-- `GET /metrics`
-  - Prometheus-compatible metrics.
-- `POST /events/text`
-  - Ingests an incident text event.
-  - Publishes a `text_event` into Redis Streams.
-- `POST /events/vision`
-  - Ingests a vision event from:
-    - An uploaded image; or
-    - A path to a sample image (e.g. under `data/sample`).
-  - Publishes a `vision_event` into Redis Streams.
-- `GET /events/recent`
-  - Returns recent enriched events from Postgres.
-- `GET /aggregates/summary`
-  - Returns simple aggregates (counts by type/severity over a recent window).
-- `POST /monitoring/drift/run`
-  - Runs Evidently-based drift analysis comparing training vs. recent events.
-- `GET /monitoring/drift/latest`
-  - Returns the path of the latest drift report HTML file.
-- `GET /dlq/recent`
-  - Returns recent messages that failed processing and were sent to the DLQ stream.
-- `POST /reprocess/{message_id}`
-  - Re-publishes a DLQ message for reprocessing by the worker.
-- `POST /copilot/triage`
-  - Runs the Copilot triage workflow for a given incident ID or free-text description.
-  - Returns structured JSON plus a markdown incident brief.
-
-All ingestion and response schemas are defined under `safetyops.domain`.
-
----
-
-## Worker Overview
-
-Entry point:
+## Validation and delivery
 
 ```bash
-python -m services.worker.run
+pytest -q                       # 47 tests with optional MCP dependencies installed
+ruff check .                    # Repository CI checks
+npm ci                          # Browser test tooling only
+npx playwright install chromium
+npm run test:web                 # Running website at http://127.0.0.1:8010
 ```
 
-Responsibilities:
-
-1. Ensure Redis consumer group exists.
-2. Consume events from the stream using `RedisStreamsEventBus`.
-3. For each event:
-   - Store a `RawEvent` row.
-   - Run enrichment:
-     - **Text**: fine-tuned DistilBERT severity model (`safetyops.ml.nlp.infer`),
-       falling back to the rule-based classifier when the model or its heavy
-       dependencies are absent.
-     - **Vision**: YOLO PPE wrapper (`safetyops.ml.vision.infer`) with:
-       - Lazy import of `ultralytics` and `torch`.
-       - Fallback stub if the model is unavailable (logged once).
-   - Store an `EnrichedEvent` row.
-   - Update `DailyAggregate` for `(date, event_type, severity)`.
-   - Acknowledge the message to Redis.
-
-Metrics (Prometheus) capture publish and processing counts/timings.
-
----
-
-## Models and Results
-
-### Text severity (DistilBERT, real data)
-
-`distilbert-base-uncased` fine-tuned on **real MSHA accident narratives**
-(273k public mine-safety reports; labels derived from the reported
-`DEGREE_INJURY` outcome — see [ADR-0015](context/03_DECISIONS_LOG.md) and
-[models/nlp/MODEL_CARD.md](models/nlp/MODEL_CARD.md)).
-
-Held-out test set (1,605 balanced samples):
-
-| Model               | Accuracy | Macro-F1 | High-severity recall |
-|---------------------|----------|----------|----------------------|
-| Rule-based baseline | 0.40     | 0.34     | 0.16                 |
-| **DistilBERT**      | **0.78** | **0.78** | **0.88**             |
-
-Reproduce:
-
-```bash
-pip install -r requirements/ml.txt
-python scripts/download_msha_dataset.py
-python -m safetyops.ml.nlp.train
-python -m safetyops.ml.nlp.evaluate
-```
-
-### PPE detection (YOLOv8)
-
-Hard-hat compliance scoring uses the community
-[`keremberke/yolov8n-hard-hat-detection`](https://huggingface.co/keremberke/yolov8n-hard-hat-detection)
-weights (mAP@0.5 ≈ 0.81 reported by the author on the hard-hat dataset):
-
-```bash
-python scripts/download_vision_model.py
-export SAFETYOPS_VISION_MODEL_PATH=models/vision/ppe_yolov8n.pt
-```
-
-Details and limitations: [models/vision/MODEL_CARD.md](models/vision/MODEL_CARD.md).
-
-### Copilot LLM enhancement (optional)
-
-Incident briefs can be rewritten by any OpenAI-compatible endpoint (Groq free
-tier, OpenAI, or local Ollama):
-
-```bash
-SAFETYOPS_LLM_BASE_URL=https://api.groq.com/openai
-SAFETYOPS_LLM_API_KEY=gsk_...
-SAFETYOPS_LLM_MODEL=llama-3.3-70b-versatile
-```
-
-Unconfigured or failing LLM calls degrade gracefully to the template report.
-
----
-
-## Streamlit UI Overview
-
-Run:
-
-```bash
-streamlit run apps/ui/main.py --server.port 8501
-```
-
-Tabs:
-
-1. **Live Feed**
-   - Button to produce N demo events (both text and vision).
-   - Auto-refreshes recent enriched events from `/events/recent`.
-2. **Incident Triage**
-   - Text area for incident description.
-   - Submits to `/events/text`.
-   - Displays the latest triaged incidents.
-3. **Copilot Chat**
-   - Text area to describe an incident.
-   - Calls `/copilot/triage` and shows:
-     - Structured JSON (category, severity, risk score, context events).
-     - A markdown incident brief with immediate and preventive actions.
-4. **Ops Dashboard**
-   - Uses `/aggregates/summary` to render simple charts by event type and severity.
-5. **Monitoring**
-   - Button to trigger drift analysis via `/monitoring/drift/run`.
-   - Shows latest drift report path and (where possible) an inline HTML preview.
-   - Summarizes key Prometheus metrics: events ingested, processed, DLQ counts.
-
----
-
-## Environment Variables
-
-All configuration is centralized via `safetyops.core.settings.Settings` using `pydantic-settings`.
-
-Key variables (prefix `SAFETYOPS_`):
-
-| Variable                         | Default (local)                                                   | Description                                      |
-|----------------------------------|-------------------------------------------------------------------|--------------------------------------------------|
-| `SAFETYOPS_APP_NAME`            | `SafetyOps Copilot`                                               | Display name                                     |
-| `SAFETYOPS_APP_VERSION`         | `0.1.0`                                                           | API version                                      |
-| `SAFETYOPS_ENV`                 | `local`                                                           | Environment name                                 |
-| `SAFETYOPS_LOG_LEVEL`           | `INFO`                                                            | Logging level                                    |
-| `SAFETYOPS_DEPLOY_MODE`         | `local`                                                           | `local` or `cloud` deploy mode                   |
-| `SAFETYOPS_REDIS_URL`           | `redis://localhost:6379`                                          | Redis connection URL                             |
-| `SAFETYOPS_STREAM_KEY`          | `safetyops:events`                                                | Redis Stream key                                 |
-| `SAFETYOPS_CONSUMER_GROUP`      | `safetyops-workers`                                               | Redis consumer group name                        |
-| `SAFETYOPS_CONSUMER_NAME`       | `worker-1`                                                        | Consumer name                                    |
-| `SAFETYOPS_DLQ_STREAM_KEY`      | `safetyops:events:dlq`                                            | Redis Stream key for DLQ messages                |
-| `SAFETYOPS_DATABASE_URL`        | `postgresql+psycopg2://safetyops:safetyops@localhost:5432/safetyops` | Postgres URL for SQLAlchemy                      |
-| `SAFETYOPS_MLFLOW_TRACKING_URI` | `http://localhost:5000`                                           | MLflow tracking URI                              |
-| `SAFETYOPS_ARTIFACTS_DIR`       | `artifacts`                                                       | Base directory for derived artifacts             |
-| `SAFETYOPS_NLP_MODEL_DIR`       | `models/nlp`                                                      | Directory containing the fine-tuned NLP model    |
-| `SAFETYOPS_VISION_MODEL_PATH`   | `yolov8n.pt`                                                      | YOLOv8 weights path (pretrained or fine-tuned)   |
-| `SAFETYOPS_LLM_BASE_URL`        | *(unset)*                                                         | OpenAI-compatible LLM endpoint (Groq/Ollama/...) |
-| `SAFETYOPS_LLM_API_KEY`         | *(unset)*                                                         | API key for the LLM endpoint (if required)       |
-| `SAFETYOPS_LLM_MODEL`           | *(unset)*                                                         | LLM model name (e.g. `llama-3.3-70b-versatile`)  |
-| `SAFETYOPS_OLLAMA_BASE_URL`     | *(unset)*                                                         | Deprecated alias for `SAFETYOPS_LLM_BASE_URL`    |
-| `SAFETYOPS_OLLAMA_MODEL`        | *(unset)*                                                         | Deprecated alias for `SAFETYOPS_LLM_MODEL`       |
-| `SAFETYOPS_API_KEY`             | *(unset)*                                                         | If set, write endpoints require `X-API-Key`      |
-| `SAFETYOPS_RATE_LIMIT_PER_MINUTE` | `0`                                                             | Per-IP write-request limit (0 = disabled)        |
-| `SAFETYOPS_NLP_MODEL_HF_REPO`   | *(unset)*                                                         | HF Hub repo to fetch the NLP model from at startup |
-| `SAFETYOPS_METRICS_NAMESPACE`   | `safetyops`                                                       | Prefix/namespace for Prometheus metrics          |
-
-Update `.env.example` and `.env` if new configuration is introduced.
-
----
-
-## Deploy (Free Tiers)
-
-For a detailed guide to deploying on Streamlit Community Cloud and Hugging Face Spaces (with optional managed Redis/Postgres), see:
-
-- `context/07_FREE_DEPLOY_GUIDE.md`
-
-It describes:
-
-- A simple Streamlit-only demo mode.
-- A more realistic API + UI deployment with free managed services.
-- Recommended environment variables and trade-offs for SQLite vs Postgres.
-
----
-
-## Tooling and CI
-
-### Linting
-
-Uses `ruff`:
-
-```bash
-make lint
-# or:
-ruff check .
-```
-
-Configuration lives in `ruff.toml` (PEP8-ish with basic import checks).
-
-### Testing
-
-Uses `pytest`:
-
-```bash
-make test
-# or:
-pytest
-```
-
-Current tests cover:
-
-- Event model validation.
-- Redis Streams event bus (mocked client).
-- Worker enrichment logic for text and vision (without requiring YOLO).
-
-Tests are designed to avoid heavy imports (YOLO/torch) by using lazy imports and stubs.
-
-### GitHub Actions
-
-`.github/workflows/ci.yml` runs on pushes and PRs:
-
-1. Sets up Python.
-2. Installs `requirements-dev.txt`.
-3. Runs `ruff`.
-4. Runs `pytest`.
-
----
-
-## Grounding for Future AI Changes
-
-Before making significant changes (especially as an AI assistant):
-
-1. Read `context/00_GOAL.md` to understand scope and non-goals.
-2. Read `context/01_ARCHITECTURE.md` for the system view.
-3. Read `context/02_COMPONENTS.md` for component details.
-4. Skim `context/03_DECISIONS_LOG.md` for prior trade-offs.
-5. Check `context/05_ROADMAP.md` to see where your change fits.
-
-When you:
-
-- Change an architectural decision, update `context/03_DECISIONS_LOG.md`.
-- Add a new dependency or external service, document why.
-- Adjust core flows (API, worker, stream, DB), update the notebooks and README as needed.
-
----
-
-## Troubleshooting
-
-**Q: The API cannot connect to Postgres or Redis**
-
-- Ensure infra is running:
-
-  ```bash
-  docker compose -f infra/docker-compose.local.yml ps
-  ```
-
-- Check `SAFETYOPS_DATABASE_URL` and `SAFETYOPS_REDIS_URL` in `.env`.
-- Confirm ports are not blocked or used by other services.
-
-**Q: YOLO or torch imports fail**
-
-- For real model inference:
-  - Install the heavy ML dependencies: `pip install -r requirements/ml.txt`.
-- For CI or constrained environments:
-  - The code is written with lazy imports and fallbacks:
-    - Failures are logged.
-    - Text events fall back to the rule-based classifier; vision events use a stub PPE prediction so the pipeline continues to run.
-
-**Q: Tests are slow or flaky**
-
-- Ensure you are not accidentally pointing tests at real infra.
-- Tests use mocks/fakes for Redis and do not require a running database.
-- If you introduce new tests that touch heavy components, keep them isolated and fast.
-
----
-
-## Exact Commands to Remember
-
-```bash
-# Install dev dependencies
-make install
-
-# Start infra (Postgres, Redis, MLflow, Prometheus, Grafana)
-make up
-
-# Run API
-uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000
-
-# Run worker
-python -m services.worker.run
-
-# Run UI
-streamlit run apps/ui/main.py --server.port 8501
-
-# Lint
-make lint
-
-# Test
-make test
-```
-
-This README should be kept in sync with the `context/` docs and notebooks as the project evolves.
+Set `SAFETYOPS_TEST_URL` to test another running instance. Browser tests cover
+sample separation, persistence across reloads, action transitions and closure
+evidence, exports, keyboard selection, text injection handling, deletion, desktop
+and mobile overflow, and JavaScript errors.
+
+[Deployment and rollback](docs/DEPLOYMENT.md) · [SEO and discoverability](docs/SEO.md)
+· [Design system](DESIGN.md) · [Architecture decisions](context/03_DECISIONS_LOG.md)
+· [Full project handoff](HANDOFF.md)
+
+Use this as decision support alongside competent review and site procedures.
+It is not an emergency monitor, compliance certification or replacement for an
+official incident system. MIT licensed; font license is included separately.

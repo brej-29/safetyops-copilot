@@ -1,3 +1,5 @@
+> Current release (2026-11-09): PRODUCT.md and HANDOFF.md describe the coordinator workspace. The v1 scope below is historical; the user explicitly authorized expanding it.
+
 # SafetyOps Copilot — Goal and Scope
 
 ## What we are building (v1)

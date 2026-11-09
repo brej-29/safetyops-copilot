@@ -1,0 +1,7 @@
+﻿# Fast source-only patch against a verified existing runtime image.
+# Normal fresh installations should continue to use Dockerfile.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+WORKDIR /app
+COPY --chown=appuser:appuser apps/ /app/apps/
+COPY --chown=appuser:appuser safetyops/ /app/safetyops/

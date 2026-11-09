@@ -14,6 +14,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from apps.api.security import enforce_write_policy
+from apps.api.workspace import router as workspace_router
+from apps.web.routes import router as web_router
 from safetyops.agents.triage_graph import run_triage_workflow
 from safetyops.core import configure_logging, get_logger, set_correlation_id, settings
 from safetyops.core.exceptions import SafetyOpsError
@@ -36,6 +38,7 @@ from safetyops.domain.responses import (
     HealthResponse,
     SystemStatusResponse,
 )
+from safetyops.ml.nlp.infer import warm_model_in_background
 from safetyops.monitoring import EVENTS_INGESTED
 from safetyops.streaming import RedisStreamsEventBus
 
@@ -53,6 +56,7 @@ async def lifespan(app: FastAPI):
     Redis is unreachable (e.g. a cloud deployment before secrets are wired),
     with the degraded state surfaced via /system/status.
     """
+    warm_model_in_background()
     try:
         init_db()
     except Exception:
@@ -66,6 +70,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
+app.include_router(workspace_router)
+app.include_router(web_router)
 
 
 @app.middleware("http")
@@ -78,6 +84,9 @@ async def add_correlation_id(request: Request, call_next):
     finally:
         # Clear correlation id after request is processed
         set_correlation_id(None)
+    if request.url.path.startswith("/api/workspace"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
     response.headers["X-Correlation-ID"] = correlation_id
     return response
 

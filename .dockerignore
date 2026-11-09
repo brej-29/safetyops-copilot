@@ -18,3 +18,11 @@ models/nlp/*
 models/vision/*.pt
 notebooks/
 .env
+node_modules/
+.impeccable/
+tests/web/
+.deploy_api_key
+.cloudrun_env.yaml
+.agents/
+.codex/
+.aws/
