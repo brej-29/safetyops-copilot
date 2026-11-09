@@ -364,3 +364,7 @@ are ready for a portfolio or post, with their provenance recorded alongside.
   search rankings and AI recommendations are not guaranteed.
 - Legacy Redis/worker connectivity remains an explicitly documented external
   infrastructure issue; it does not block the deployed SQL-backed workspace.
+- Remote release CI also passed both jobs (`ci` for Python/MCP and `web` for the
+  full browser workflow) for source commit `21d998b2a2fadaaa90189811d967b4d76f93eda1`:
+  https://github.com/brej-29/safetyops-copilot/actions/runs/42555287092
+  The final follow-up commit records this evidence only; runtime source is unchanged.
